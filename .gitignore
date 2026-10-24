@@ -1,0 +1,23 @@
+# Secrets
+.env
+*.secret
+
+# Local data (personal Garmin data never goes to git)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
