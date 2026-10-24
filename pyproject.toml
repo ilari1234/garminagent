@@ -1,0 +1,48 @@
+[project]
+name = "garminagent"
+version = "0.1.0"
+description = "AI-assisted training planning on Garmin Connect data"
+readme = "README.md"
+authors = [
+    { name = "Ilari Lehtonen", email = "ilari.lehtonen@gmail.com" }
+]
+requires-python = ">=3.15"
+dependencies = [
+    "psycopg[binary]>=3.3.6",
+    "pydantic-settings>=2.16.1",
+    "sqlalchemy>=2.1.6",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+garminagent = "garminagent.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py315"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.15"
+typeCheckingMode = "strict"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = ["integration: needs a Postgres database at TEST_DATABASE_URL"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.2",
+]

@@ -80,7 +80,9 @@ src/garminagent/
 
 - **M0 — Spike (done 2026-10-24):** `spikes/probe_personal_api.py` probed every endpoint;
   findings in [garmin-personal-api/evaluation.md](garmin-personal-api/evaluation.md).
-- **M1 — Scaffold:** pyproject, src layout, ruff/pyright/pytest, CI, Dockerfile, compose.
+- **M1 — Scaffold:** pyproject, src layout, ruff/pyright (strict)/pytest, settings + logging +
+  CLI (`version`, `config`, `db-check`), GitHub Actions (lint, test with Postgres, image to
+  GHCR on main), multi-stage Dockerfile, compose with Postgres 18.
 - **M2 — Client:** token manager, all endpoints, retries, tests with recorded fixtures.
 - **M3 — Storage:** SQLAlchemy models, Alembic migrations, raw store.
 - **M4 — Sync:** backfill + incremental, activity file download and FIT parsing.

@@ -1,0 +1,37 @@
+# Local development stack. On AWS the same image runs as an ECS task against RDS,
+# with settings injected as environment variables instead of .env.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: garminagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-garminagent}
+      POSTGRES_DB: garminagent
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U garminagent -d garminagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    image: garminagent:local
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD:-garminagent}@db:5432/garminagent
+    volumes:
+      - appdata:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["db-check"]
+
+volumes:
+  pgdata:
+  appdata:

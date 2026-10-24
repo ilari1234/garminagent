@@ -1,0 +1,15 @@
+# Keep secrets, personal data and local state out of the build context.
+.env
+.env.*
+data/
+.git/
+.github/
+.claude/
+.venv/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
+docs/
+spikes/
+tests/

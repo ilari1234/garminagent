@@ -132,8 +132,11 @@ def build_calls(d: date) -> list[Call]:
         Call("userprofile_settings", "/userprofile-service/userprofile/settings"),
         Call("heart_rate_zones", "/biometric-service/heartRateZones/v2"),
         Call("activities_recent", "/activitylist-service/activities/search/activities", {"start": 0, "limit": 20}),
-        Call("activities_oldest", "/activitylist-service/activities/search/activities",
-             {"start": 0, "limit": 1, "sortOrder": "asc"}),
+        Call(
+            "activities_oldest",
+            "/activitylist-service/activities/search/activities",
+            {"start": 0, "limit": 1, "sortOrder": "asc"},
+        ),
         Call("fitness_age", f"/fitnessage-service/fitnessage/v2/{ds}"),
         Call("weight_goals", f"/goal-service/goal/user/effective/weightgoal/{ms}/{ds}"),
         Call("hrv_day", f"/hrv-service/hrv/{ds}"),
@@ -150,8 +153,11 @@ def build_calls(d: date) -> list[Call]:
         Call("daily_summaries_year", "/usersummary-service/v2/dailysummaries", {"startDate": ys, "endDate": ds}),
         Call("weight_all", f"/weight-service/weight/all/{ms}/{ds}"),
         Call("weight_range", f"/weight-service/weight/range/{ms}/{ds}"),
-        Call("body_battery_range", "/wellness-service/wellness/bodyBattery/reports/daily",
-             {"startDate": ws, "endDate": ds}),
+        Call(
+            "body_battery_range",
+            "/wellness-service/wellness/bodyBattery/reports/daily",
+            {"startDate": ws, "endDate": ds},
+        ),
         Call("spo2_day", f"/wellness-service/wellness/daily/spo2acclimation/{ds}"),
         Call("daily_heart_rate", "/wellness-service/wellness/dailyHeartRate", {"date": ds}),
         Call("wellness_activity_range", f"/wellnessactivity-service/activity/summary/range/{ws}/{ds}"),
@@ -163,13 +169,24 @@ def limit_calls(d: date) -> list[Call]:
     ds = d.isoformat()
     old = d - timedelta(days=365 * 5)
     return [
-        Call("limit_sleep_32d", "/sleep-service/sleep/dailySleepSummariesByDate",
-             {"startDate": (d - timedelta(days=31)).isoformat(), "endDate": ds}),
-        Call("limit_stress_29d", f"/usersummary-service/stats/stress/daily/{(d - timedelta(days=28)).isoformat()}/{ds}"),
-        Call("limit_daily_summaries_366d", "/usersummary-service/v2/dailysummaries",
-             {"startDate": (d - timedelta(days=365)).isoformat(), "endDate": ds}),
-        Call("history_daily_summaries_5y_ago", "/usersummary-service/v2/dailysummaries",
-             {"startDate": (old - timedelta(days=30)).isoformat(), "endDate": old.isoformat()}),
+        Call(
+            "limit_sleep_32d",
+            "/sleep-service/sleep/dailySleepSummariesByDate",
+            {"startDate": (d - timedelta(days=31)).isoformat(), "endDate": ds},
+        ),
+        Call(
+            "limit_stress_29d", f"/usersummary-service/stats/stress/daily/{(d - timedelta(days=28)).isoformat()}/{ds}"
+        ),
+        Call(
+            "limit_daily_summaries_366d",
+            "/usersummary-service/v2/dailysummaries",
+            {"startDate": (d - timedelta(days=365)).isoformat(), "endDate": ds},
+        ),
+        Call(
+            "history_daily_summaries_5y_ago",
+            "/usersummary-service/v2/dailysummaries",
+            {"startDate": (old - timedelta(days=30)).isoformat(), "endDate": old.isoformat()},
+        ),
     ]
 
 
@@ -204,10 +221,15 @@ def run_call(client: httpx.Client, call: Call, raw_dir: Path) -> tuple[dict[str,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--date", type=date.fromisoformat, default=date.today() - timedelta(days=1),
-                        help="target calendar date (default: yesterday)")
-    parser.add_argument("--probe-limits", action="store_true",
-                        help="also call just over documented range limits and 5 years back")
+    parser.add_argument(
+        "--date",
+        type=date.fromisoformat,
+        default=date.today() - timedelta(days=1),
+        help="target calendar date (default: yesterday)",
+    )
+    parser.add_argument(
+        "--probe-limits", action="store_true", help="also call just over documented range limits and 5 years back"
+    )
     args = parser.parse_args()
 
     load_dotenv()
