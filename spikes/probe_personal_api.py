@@ -80,9 +80,8 @@ def get_token(client: httpx.Client, api_key: str) -> tuple[str, dict[str, Any]]:
         "status": resp.status_code,
         "headers": {k: v for k, v in resp.headers.items() if k.lower().startswith(HEADER_HINTS)},
         "structure": structure(body),
-        "non_secret_fields": {
-            k: v for k, v in body.items() if "token" not in k.lower() and not isinstance(v, (dict, list))
-        },
+        # Only numbers/booleans (e.g. expires_in); any string could be a credential.
+        "numeric_fields": {k: v for k, v in body.items() if isinstance(v, (int, float, bool))},
     }
     return token, meta
 
