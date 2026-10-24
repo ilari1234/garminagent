@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ BASE_URL = "https://personal.connectapi.garmin.com"
 TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
 HEADER_HINTS = ("rate", "limit", "retry", "quota", "x-", "content-type", "content-disposition")
 REQUEST_DELAY_S = 1.0
+DATA_KEY = re.compile(r"^[\d-]+$")
 
 
 @dataclass
@@ -49,7 +51,12 @@ def structure(value: Any, depth: int = 0, max_depth: int = 4) -> Any:
     if depth >= max_depth:
         return type(value).__name__
     if isinstance(value, dict):
-        return {k: structure(v, depth + 1, max_depth) for k, v in value.items()}
+        # Keys that look like dates or IDs are data, not field names: collapse them.
+        data_keys = [k for k in value if DATA_KEY.match(str(k))]
+        shape = {k: structure(v, depth + 1, max_depth) for k, v in value.items() if k not in data_keys}
+        if data_keys:
+            shape[f"<{len(data_keys)} date/id keys>"] = structure(value[data_keys[0]], depth + 1, max_depth)
+        return shape
     if isinstance(value, list):
         return [len(value), structure(value[0], depth + 1, max_depth)] if value else [0]
     return None if value is None else type(value).__name__
@@ -158,7 +165,8 @@ def run_call(client: httpx.Client, call: Call, raw_dir: Path) -> tuple[dict[str,
             entry["structure"] = structure(body)
             (raw_dir / f"{call.name}.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
         except ValueError:
-            entry["text_preview"] = resp.text[:300]
+            entry["content_type"] = resp.headers.get("content-type")
+            (raw_dir / f"{call.name}.txt").write_text(resp.text, encoding="utf-8")
     if resp.status_code >= 400:
         entry["error_preview"] = resp.text[:300]
     return entry, body
