@@ -34,7 +34,8 @@ Source: developer.garmin.com Personal API pages; spec in
 
 - **Auth:** user creates an API key in Garmin Connect web (expiry 30/90/180/365 days, shown once).
   `POST https://personal.connectapi.garmin.com/personalapitoken-service/personal-api/personal-api-key/token`
-  with `Authorization: ApiKey <key>` → access token valid 24 h. No refresh token; request a new one.
+  with `Authorization: ApiKey <key>` → access token (plain-text JWT) valid 24 h. No refresh
+  token; request a new one.
 - **Shape:** 26 read-only GET endpoints, pull only (no webhooks).
 - **Covered:** activity search/summary/splits/workouts, original activity file download, HR zones,
   HRV, sleep, daily summaries (≤1 year per call), stress, steps, Body Battery, SpO2, daily HR,
@@ -43,7 +44,9 @@ Source: developer.garmin.com Personal API pages; spec in
 - **Not covered:** Training Status/Readiness, acute/chronic load, race predictor, VO2max trend,
   and any write access (no workout/calendar push). → We compute load/fitness metrics ourselves;
   plans live in our app (later: FIT workout file export).
-- **Unknown until measured (M0):** rate limits, history depth, activity file format, real payloads.
+- **Measured in M0** ([evaluation](garmin-personal-api/evaluation.md)): all endpoints work,
+  no rate-limit headers and no throttling at 1 req/s, activities back to 2019, activity files
+  delivered as zip, range limits partly enforced (stress 28 d strictly).
 
 ## Architecture (phase 1)
 
@@ -75,9 +78,8 @@ src/garminagent/
 
 ## Phase 1 milestones
 
-- **M0 — Spike:** `spikes/probe_personal_api.py` calls every endpoint with the real key and
-  records status, latency, size, headers, payload structure, history depth and file format.
-  Output → `docs/garmin-personal-api/evaluation.md`.
+- **M0 — Spike (done 2026-10-24):** `spikes/probe_personal_api.py` probed every endpoint;
+  findings in [garmin-personal-api/evaluation.md](garmin-personal-api/evaluation.md).
 - **M1 — Scaffold:** pyproject, src layout, ruff/pyright/pytest, CI, Dockerfile, compose.
 - **M2 — Client:** token manager, all endpoints, retries, tests with recorded fixtures.
 - **M3 — Storage:** SQLAlchemy models, Alembic migrations, raw store.

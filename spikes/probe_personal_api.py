@@ -72,24 +72,54 @@ def file_format(content: bytes) -> str:
     return "unknown"
 
 
-def get_token(client: httpx.Client, api_key: str) -> tuple[str, dict[str, Any]]:
-    resp = client.post(TOKEN_PATH, headers={"Authorization": f"ApiKey {api_key}"})
-    if resp.status_code != 200:
-        sys.exit(f"Token request failed: HTTP {resp.status_code} {resp.text[:300]}")
-    body = resp.json()
-    token = next(
-        (body[k] for k in ("access_token", "accessToken", "token") if isinstance(body, dict) and k in body),
-        None,
-    )
-    if not token:
-        sys.exit(f"Could not find an access token in response with keys: {list(body)}")
-    meta = {
-        "status": resp.status_code,
-        "headers": {k: v for k, v in resp.headers.items() if k.lower().startswith(HEADER_HINTS)},
-        "structure": structure(body),
-        # Only numbers/booleans (e.g. expires_in); any string could be a credential.
-        "numeric_fields": {k: v for k, v in body.items() if isinstance(v, (int, float, bool))},
+def safe_headers(resp: httpx.Response) -> dict[str, str]:
+    """Interesting headers; values of anything auth-related are withheld."""
+    return {
+        k: ("<withheld>" if any(s in k.lower() for s in ("token", "auth", "cookie")) else v)
+        for k, v in resp.headers.items()
+        if k.lower().startswith(HEADER_HINTS) or "token" in k.lower()
     }
+
+
+def get_token(client: httpx.Client, api_key: str) -> tuple[str, dict[str, Any]]:
+    """Exchange the API key for an access token. The response format is undocumented,
+    so accept JSON or a bare token string; never print the body."""
+    resp = client.post(TOKEN_PATH, headers={"Authorization": f"ApiKey {api_key}"})
+    text = resp.text.strip()
+    meta: dict[str, Any] = {
+        "status": resp.status_code,
+        "content_type": resp.headers.get("content-type"),
+        "body_length": len(text),
+        "redirects": [str(r.url) for r in resp.history],
+        "final_url": str(resp.url),
+        "headers": safe_headers(resp),
+    }
+    if resp.status_code != 200:
+        sys.exit(f"Token request failed: HTTP {resp.status_code} {text[:300]}")
+
+    token: str | None = None
+    try:
+        body = json.loads(text)
+    except ValueError:
+        body = None
+    if isinstance(body, dict):
+        meta["format"] = "json object"
+        meta["structure"] = structure(body)
+        # Only numbers/booleans (e.g. expires_in); any string could be a credential.
+        meta["numeric_fields"] = {k: v for k, v in body.items() if isinstance(v, (int, float, bool))}
+        token = next((body[k] for k in ("access_token", "accessToken", "token") if k in body), None)
+    elif isinstance(body, str):
+        meta["format"] = "json string"
+        token = body
+    elif text and not any(c.isspace() for c in text) and not text.startswith("<"):
+        meta["format"] = "plain text"
+        token = text
+
+    if not token:
+        meta["format"] = meta.get("format") or ("html" if text.startswith("<") else "empty" if not text else "other")
+        sys.exit(f"No access token recognized; response metadata: {json.dumps(meta, indent=2)}")
+    meta["token_length"] = len(token)
+    meta["looks_like_jwt"] = token.count(".") == 2
     return token, meta
 
 
@@ -153,7 +183,7 @@ def run_call(client: httpx.Client, call: Call, raw_dir: Path) -> tuple[dict[str,
         "status": resp.status_code,
         "elapsed_ms": elapsed_ms,
         "bytes": len(resp.content),
-        "headers": {k: v for k, v in resp.headers.items() if k.lower().startswith(HEADER_HINTS)},
+        "headers": safe_headers(resp),
     }
     body: Any = None
     if call.binary and resp.status_code == 200:
