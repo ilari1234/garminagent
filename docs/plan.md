@@ -111,8 +111,9 @@ src/garminagent/
 ```
 
 - **Client:** `httpx`; token cached until expiry, re-requested on 401; exponential backoff on
-  429/5xx honoring `Retry-After`. Pydantic models generated from the spec, lenient
-  (`extra="allow"`) so schema drift doesn't break ingestion.
+  429/5xx honoring `Retry-After`. Returns raw JSON so the raw store keeps payloads verbatim;
+  typed (lenient, all-optional) models live in the normalization layer (M3), so schema drift
+  never breaks ingestion.
 - **Two storage layers:**
   - *Raw* — every response stored verbatim (endpoint, params, fetched_at, hash) plus original
     activity files. Lets us re-parse without re-fetching.
@@ -134,7 +135,11 @@ src/garminagent/
 - **M1 — Scaffold:** pyproject, src layout, ruff/pyright (strict)/pytest, settings + logging +
   CLI (`version`, `config`, `db-check`), GitHub Actions (lint, test with Postgres, image to
   GHCR on main), multi-stage Dockerfile, compose with Postgres 18.
-- **M2 — Client:** token manager, all endpoints, retries, tests with recorded fixtures.
+- **M2 — Client:** `garminagent.garmin` — plain-text JWT token handling (expiry from `exp`,
+  renewal before expiry and on 401), all 26 endpoints returning raw JSON, per-endpoint range
+  limits plus `date_chunks`, activity paging, activity zip → validated FIT files, pacing
+  (1 req/s), backoff on 429/5xx/network errors with a hard stop on long `Retry-After`;
+  `garminagent auth-check`; tests against a fake server with synthetic fixtures.
 - **M3 — Storage:** SQLAlchemy models, Alembic migrations, raw store.
 - **M4 — Sync:** backfill + incremental, activity file download and FIT parsing.
 - **M5 — Run it:** scheduled containerized sync, operational docs.

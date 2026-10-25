@@ -5,6 +5,8 @@ import logging
 import sys
 from datetime import UTC, datetime
 
+QUIET_LOGGERS = ("httpx", "httpcore")
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -26,3 +28,8 @@ def configure_logging(level: str = "INFO", fmt: str = "text") -> None:
     else:
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
     logging.basicConfig(level=level, handlers=[handler], force=True)
+    # httpx logs every request URL at INFO and httpcore logs response headers at DEBUG; headers
+    # could carry cookies one day, so keep both quiet whatever LOG_LEVEL is. Our transport logs
+    # method, path and status itself.
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)

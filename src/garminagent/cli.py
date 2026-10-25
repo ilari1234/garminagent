@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import UTC, datetime
 
 import typer
 from sqlalchemy import create_engine, text
@@ -9,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from garminagent import __version__
 from garminagent.config import get_settings
+from garminagent.garmin import GarminClient, GarminError
 from garminagent.log import configure_logging
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -47,3 +49,18 @@ def db_check() -> None:
     finally:
         engine.dispose()
     log.info("database reachable: %s", server_version)
+
+
+@app.command("auth-check")
+def auth_check() -> None:
+    """Check that the Garmin API key works: get a token and read the profile settings.
+    Prints only the outcome and the token expiry, never the token or profile data."""
+    try:
+        with GarminClient.from_settings(get_settings()) as client:
+            client.get_user_settings()
+            expires_at = client.token_expires_at
+    except GarminError as exc:
+        log.error("Garmin auth check failed: %s", exc)
+        raise typer.Exit(code=1) from exc
+    expiry = datetime.fromtimestamp(expires_at, UTC).isoformat(timespec="minutes") if expires_at else "unknown"
+    log.info("Garmin API key accepted; access token valid until %s", expiry)

@@ -27,6 +27,7 @@ Create the key in Garmin Connect web on the Personal API Key page. It is shown o
 uv run garminagent --help
 uv run garminagent config      # effective settings, secrets masked
 uv run garminagent db-check    # can we reach Postgres?
+uv run garminagent auth-check  # does the Garmin API key work? (prints only the token expiry)
 ```
 
 With Docker:
@@ -48,6 +49,9 @@ All settings come from environment variables (or `.env`):
 | `DATA_DIR` | `data` (`/data` in the image) | Raw payloads and activity files |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `text` (`json` in the image) | `text` or `json` |
+| `GARMIN_BASE_URL` | `https://personal.connectapi.garmin.com` | Personal API base URL |
+| `GARMIN_MIN_REQUEST_INTERVAL` | `1.0` | Minimum seconds between Garmin requests |
+| `GARMIN_MAX_RETRIES` | `4` | Retries on 429, 5xx and network errors before giving up |
 
 ## Development
 

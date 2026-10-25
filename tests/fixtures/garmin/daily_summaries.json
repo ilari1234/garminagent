@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "userProfilePk": 1,
+      "calendarDate": "2026-10-01",
+      "source": "FAKE",
+      "includesWellnessData": true,
+      "includesActivityData": true,
+      "movement": {"steps": 12000, "pushes": 0, "floorsAscended": 8, "floorsDescended": 7},
+      "calories": {"burnedResting": 1700, "burnedActive": 800, "burnedTotal": 2500},
+      "heartRate": {"minValue": 44, "maxValue": 158, "restingValue": 47},
+      "intensityMinutes": {"goal": 150, "moderate": 20, "vigorous": 35},
+      "stress": {"avgLevel": 28, "maxLevel": 90, "qualifier": "BALANCED"},
+      "bodyBattery": {"minValue": 25, "maxValue": 90, "chargedValue": 60, "drainedValue": 65, "latestValue": 30},
+      "respiration": {"avgValue": 14.0, "maxValue": 22.0, "minValue": 10.0}
+    },
+    {
+      "uuid": "00000000-0000-0000-0000-000000000002",
+      "userProfilePk": 1,
+      "calendarDate": "2026-10-02",
+      "source": "FAKE",
+      "includesWellnessData": true,
+      "includesActivityData": false,
+      "movement": {"steps": 6500, "pushes": 0, "floorsAscended": 3, "floorsDescended": 3},
+      "heartRate": {"minValue": 43, "maxValue": 120, "restingValue": 46},
+      "bodyBattery": {"minValue": 30, "maxValue": 95, "chargedValue": 70, "drainedValue": 40, "latestValue": 55}
+    }
+  ]
+}
