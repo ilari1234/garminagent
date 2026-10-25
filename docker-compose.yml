@@ -1,14 +1,20 @@
-# Local development stack. On AWS the same image runs as an ECS task against RDS,
-# with settings injected as environment variables instead of .env.
+# Local development stack. On AWS the same image runs as ECS tasks against RDS, with
+# settings injected as environment variables (from Secrets Manager) instead of .env.
+#
+# Two database roles: `garminagent` owns the schema and runs migrations; `garminagent_app`
+# (created by docker/postgres/init on first start) can only read and write data. There are no
+# default passwords: set POSTGRES_PASSWORD and APP_DB_PASSWORD in .env (see .env.example).
 services:
   db:
     image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     environment:
       POSTGRES_USER: garminagent
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-garminagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
       POSTGRES_DB: garminagent
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
     volumes:
       - pgdata:/var/lib/postgresql
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -17,19 +23,28 @@ services:
       timeout: 3s
       retries: 10
 
-  app:
+  migrate:
     build: .
+    image: garminagent:local
+    environment:
+      MIGRATION_DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD}@db:5432/garminagent
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["db-upgrade"]
+
+  app:
     image: garminagent:local
     env_file:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD:-garminagent}@db:5432/garminagent
+      DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD}@db:5432/garminagent
     volumes:
       - appdata:/data
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     command: ["db-check"]
 
 volumes:

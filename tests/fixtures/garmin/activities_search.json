@@ -41,7 +41,7 @@
     "elevationLoss": 640.0,
     "averageHR": 132.0,
     "maxHR": 171.0,
-    "averagePower": 185.0,
+    "avgPower": 185.0,
     "normPower": 205.0,
     "aerobicTrainingEffect": 3.6,
     "anaerobicTrainingEffect": 1.1,

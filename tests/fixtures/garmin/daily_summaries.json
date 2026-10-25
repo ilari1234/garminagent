@@ -7,7 +7,7 @@
       "source": "FAKE",
       "includesWellnessData": true,
       "includesActivityData": true,
-      "movement": {"steps": 12000, "pushes": 0, "floorsAscended": 8, "floorsDescended": 7},
+      "movement": {"steps": {"goal": 10000, "value": 12000, "distanceInMeters": 9100.0}},
       "calories": {"burnedResting": 1700, "burnedActive": 800, "burnedTotal": 2500},
       "heartRate": {"minValue": 44, "maxValue": 158, "restingValue": 47},
       "intensityMinutes": {"goal": 150, "moderate": 20, "vigorous": 35},
@@ -22,7 +22,7 @@
       "source": "FAKE",
       "includesWellnessData": true,
       "includesActivityData": false,
-      "movement": {"steps": 6500, "pushes": 0, "floorsAscended": 3, "floorsDescended": 3},
+      "movement": {"steps": {"goal": 10000, "value": 6500, "distanceInMeters": 4900.0}},
       "heartRate": {"minValue": 43, "maxValue": 120, "restingValue": 46},
       "bodyBattery": {"minValue": 30, "maxValue": 95, "chargedValue": 70, "drainedValue": 40, "latestValue": 55}
     }

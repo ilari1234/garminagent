@@ -5,13 +5,18 @@ import logging
 from datetime import UTC, datetime
 
 import typer
-from sqlalchemy import create_engine, text
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from garminagent import __version__
 from garminagent.config import get_settings
 from garminagent.garmin import GarminClient, GarminError
 from garminagent.log import configure_logging
+from garminagent.storage import migrate
+from garminagent.storage.blobs import LocalBlobStore
+from garminagent.storage.db import make_engine, make_session_factory
+from garminagent.storage.models import Athlete
+from garminagent.storage.repository import purge_athlete
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("garminagent")
@@ -39,7 +44,7 @@ def config() -> None:
 @app.command("db-check")
 def db_check() -> None:
     """Connect to the database and report its server version."""
-    engine = create_engine(get_settings().database_url.get_secret_value(), connect_args={"connect_timeout": 5})
+    engine = make_engine(get_settings().database_url.get_secret_value())
     try:
         with engine.connect() as conn:
             server_version = conn.execute(text("select version()")).scalar_one()
@@ -49,6 +54,47 @@ def db_check() -> None:
     finally:
         engine.dispose()
     log.info("database reachable: %s", server_version)
+
+
+@app.command("db-upgrade")
+def db_upgrade() -> None:
+    """Apply database migrations as the schema owner (MIGRATION_DATABASE_URL)."""
+    settings = get_settings()
+    url = settings.migration_database_url.get_secret_value()
+    try:
+        migrate.upgrade(url, settings.db_app_role)
+        revision = migrate.current_revision(url)
+    except SQLAlchemyError as exc:
+        log.error("migration failed: %s", exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    log.info("database schema at revision %s", revision)
+
+
+@app.command("purge-data")
+def purge_data(
+    yes: bool = typer.Option(False, "--yes", help="Confirm deleting all stored Garmin data."),
+) -> None:
+    """Permanently delete all stored data: database rows and raw files. The Garmin account
+    itself is not touched; data can be synced again later."""
+    if not yes:
+        log.error("refusing to purge without --yes")
+        raise typer.Exit(code=2)
+    settings = get_settings()
+    engine = make_engine(settings.database_url.get_secret_value())
+    sessions = make_session_factory(engine)
+    try:
+        with sessions() as session:
+            athlete_id = session.scalar(select(Athlete.id).order_by(Athlete.id).limit(1))
+        if athlete_id is None:
+            log.info("nothing to purge")
+            return
+        result = purge_athlete(sessions, LocalBlobStore(settings.blob_dir), athlete_id)
+    except SQLAlchemyError as exc:
+        log.error("purge failed: %s", exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    typer.echo(json.dumps({"rows": result.rows, "blobs": result.blobs}, indent=2))
 
 
 @app.command("auth-check")

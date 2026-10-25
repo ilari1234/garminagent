@@ -28,7 +28,8 @@ def test_config_masks_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_db_check_fails_cleanly_without_database(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://nobody:pw@127.0.0.1:1/none")
+    # Nothing listens on port 1; no password needed to prove the failure path.
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://nobody@127.0.0.1:1/none")
     result = runner.invoke(app, ["db-check"])
     assert result.exit_code == 1
 
