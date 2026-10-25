@@ -14,6 +14,7 @@ adjustment.
 | Users | Single user by design — Personal API terms exclude apps serving multiple end users. Schema still carries a `user_id` so it isn't a dead end. |
 | Storage | PostgreSQL (JSONB for raw payloads); activity files on a volume, S3-compatible later |
 | Runtime | Docker; local Docker Desktop now, designed to move to AWS without code changes |
+| AI model access (phase 3) | Claude on Amazon Bedrock in an EU region, data retention mode `none` — see [Data handling](#data-handling) |
 | Repo | GitHub, private (`ilari1234/garminagent`) |
 
 ### AWS portability rules
@@ -47,6 +48,56 @@ Source: developer.garmin.com Personal API pages; spec in
 - **Measured in M0** ([evaluation](garmin-personal-api/evaluation.md)): all endpoints work,
   no rate-limit headers and no throttling at 1 req/s, activities back to 2019, activity files
   delivered as zip, range limits partly enforced (stress 28 d strictly).
+
+## Data handling
+
+The data is personal health data (GDPR special category). It already lives at Garmin and
+the services synced from it; this app adds as few parties and as little exposure as possible.
+Policy facts below were checked against Anthropic and AWS documentation on 2026-10-25.
+
+### Model access
+
+- **Production agents use Claude on Amazon Bedrock**, in an EU region (`eu-north-1` or
+  `eu-central-1`). On Bedrock, AWS is the processor; Anthropic has no access to prompts or
+  completions, and nothing is used for training.
+- **Retention mode `none`**, set per region and enforced with an SCP/IAM condition on
+  `DataRetentionMode`, so it can't be loosened by accident. Models that require retention
+  (currently Claude Fable 5/5.1, which require `aws_review`) are therefore not used, unless
+  that is consciously decided later.
+- **No cross-region inference outside the EU**: retained data would be stored in the region
+  that processes the request.
+- The direct Claude API is an acceptable fallback (commercial terms: no training; content not
+  retained by default except for Covered Models with 30-day retention). Consumer Claude plans
+  are never used for the app's data.
+
+### What may reach a model
+
+- **Agents see data only through tools** over the normalized store, never raw tables or files.
+- **Default: derived metrics** — weekly load, CTL/ATL/TSB, time in zones, HRV/sleep/resting HR
+  trends, per-session summaries (date, sport, duration, distance, load, TE, avg HR/pace/power).
+- **Never sent:** GPS coordinates and tracks (reveal home/work), activity names and
+  descriptions (free text), profile data, Garmin IDs, any credentials.
+- **Off unless explicitly enabled in config:** weight/body composition, nutrition, hydration,
+  menstrual-cycle data.
+- **Every tool call is logged** (tool, arguments, returned payload size and fields, timestamp)
+  so it is auditable what left the system.
+- **Garmin-sourced text is data, never instructions** (prompt-injection hygiene).
+
+### Storage and secrets
+
+- Raw and normalized data stay in the deployment region: RDS/S3 encrypted at rest with KMS,
+  TLS in transit, local volumes only on the developer's machine.
+- Garmin API key and cloud credentials live in Secrets Manager (env/.env locally), are never
+  logged and never placed in prompts. Short-lived Garmin keys; delete a key to revoke it and
+  all its tokens.
+- Personal data is never committed: `.env` and `data/` are gitignored and excluded from the
+  Docker build context; Claude Code is denied reads of `.env*` in `.claude/settings.json`.
+
+### Development
+
+- Tests and CI use fake fixtures shaped like real responses; no personal data in the repo.
+- AI-assisted development works from structure-only reports, not raw payloads. Developers
+  using a consumer Claude plan should check its model-training setting.
 
 ## Architecture (phase 1)
 
@@ -92,6 +143,7 @@ src/garminagent/
 
 - **Phase 2 — Analytics:** load (TRIMP/TSS-like), CTL/ATL/TSB, zone distribution, pace/power
   curves, recovery trends from HRV/sleep/Body Battery.
-- **Phase 3 — Agents:** planner, evaluator and adjuster agents on Claude, with data exposed as
-  tools / an MCP server over the normalized store. Plans stored as versioned documents.
+- **Phase 3 — Agents:** planner, evaluator and adjuster agents on Claude via Bedrock, with data
+  exposed as tools / an MCP server over the normalized store, under the
+  [data-handling](#data-handling) rules. Plans stored as versioned documents.
 - **Phase 4 — Delivery:** UI, plan calendar, FIT workout file export to the watch.
