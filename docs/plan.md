@@ -130,7 +130,24 @@ src/garminagent/
 - **Supply chain:** actions pinned to commit SHAs, base images pinned by digest, uv version
   pinned once (`required-version` in pyproject.toml, read by CI and enforced by uv); dependencies locked with hashes (`uv.lock`, installed `--locked`); Dependabot
   weekly for actions, uv, Dockerfile and compose with a 7-day cooldown; `pip-audit` over the
-  exported lock gates the image build and runs weekly; workflows checked with zizmor.
+  exported lock gates the image build and runs weekly; zizmor and a Trivy image scan gate the
+  image too; ruff bandit rules and a suite-wide credential-leak test run on every push. Details
+  and the threat model: [SECURITY.md](../SECURITY.md).
+
+## Security in every milestone
+
+Security is part of each milestone's definition of done, not a later phase:
+
+- **Every milestone** ends with the checklist in [SECURITY.md](../SECURITY.md#security-in-every-milestone),
+  `/security-review` on the change, and SECURITY.md updated if the threat model changed.
+- **Deeper reviews** at the risky transitions, marked 🔒 below: M3 (storage), phase 3
+  (agents), and the AWS deployment.
+- **Rules for AI-assisted work** live in [CLAUDE.md](../CLAUDE.md), which every Claude Code
+  session loads.
+- **Routine maintenance** (owner): weekly — read audit results and Dependabot PRs; monthly —
+  `uv lock --upgrade` (until Dependabot supports Python 3.15) and bump the Trivy image digest;
+  every 90 days — new Garmin key, delete the old one, reread SECURITY.md. GitHub settings to
+  enable: branch protection on `main` requiring CI, Dependabot alerts and security updates.
 
 ## Phase 1 milestones
 
@@ -144,7 +161,8 @@ src/garminagent/
   limits plus `date_chunks`, activity paging, activity zip → validated FIT files, pacing
   (1 req/s), backoff on 429/5xx/network errors with a hard stop on long `Retry-After`;
   `garminagent auth-check`; tests against a fake server with synthetic fixtures.
-- **M3 — Storage:** SQLAlchemy models, Alembic migrations, raw store.
+- **M3 — Storage 🔒:** SQLAlchemy models, Alembic migrations, raw store. Review: DB roles
+  and credentials, raw-store file permissions, encryption at rest, retention and deletion.
 - **M4 — Sync:** backfill + incremental, activity file download and FIT parsing.
 - **M5 — Run it:** scheduled containerized sync, operational docs.
 
@@ -152,7 +170,11 @@ src/garminagent/
 
 - **Phase 2 — Analytics:** load (TRIMP/TSS-like), CTL/ATL/TSB, zone distribution, pace/power
   curves, recovery trends from HRV/sleep/Body Battery.
-- **Phase 3 — Agents:** planner, evaluator and adjuster agents on Claude via Bedrock, with data
-  exposed as tools / an MCP server over the normalized store, under the
-  [data-handling](#data-handling) rules. Plans stored as versioned documents.
+- **Phase 3 — Agents 🔒:** planner, evaluator and adjuster agents on Claude via Bedrock, with
+  data exposed as tools / an MCP server over the normalized store, under the
+  [data-handling](#data-handling) rules. Plans stored as versioned documents. Review: the
+  OWASP LLM/Agentic mapping in SECURITY.md, safety limits as code, tool permissions,
+  prompt-injection tests.
 - **Phase 4 — Delivery:** UI, plan calendar, FIT workout file export to the watch.
+- **AWS deployment 🔒** (when it happens): least-privilege IAM, Secrets Manager, Bedrock
+  retention SCP, EU regions only, CloudTrail, KMS, budget alarms.

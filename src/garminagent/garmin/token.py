@@ -12,7 +12,7 @@ from typing import cast
 
 from garminagent.garmin.errors import GarminAuthError
 
-TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
+TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"  # noqa: S105 - a URL path, not a secret
 DEFAULT_LIFETIME_S = 24 * 3600
 # Renew this long before expiry so a token never expires mid-run.
 EXPIRY_MARGIN_S = 300

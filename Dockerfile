@@ -26,7 +26,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # --- runtime: just Python and the virtualenv, running as non-root ---
 FROM python:3.15-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
-RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
+# The app never installs packages at runtime, so drop the base image's pip and its bundled
+# wheel: less attack surface, and they carry vendored libraries (urllib3, msgpack, ...) that
+# Trivy flags and we can't patch.
+RUN python -m pip uninstall --yes --quiet pip \
+    && rm -rf /usr/local/lib/python3.*/ensurepip \
+    && groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir /data && chown app:app /data
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv

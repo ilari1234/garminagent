@@ -4,7 +4,9 @@ AI-assisted training planning on Garmin Connect data: agents create, update and 
 training plans for off-season training and events (half marathon to ultra, road and gravel
 cycling), using your history from the Garmin Connect Personal API.
 
-See [docs/plan.md](docs/plan.md) for decisions, architecture and milestones.
+See [docs/plan.md](docs/plan.md) for decisions, architecture and milestones,
+[SECURITY.md](SECURITY.md) for the threat model, controls and routines, and
+[CLAUDE.md](CLAUDE.md) for the rules AI-assisted sessions follow.
 
 ## Requirements
 

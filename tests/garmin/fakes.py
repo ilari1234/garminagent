@@ -19,6 +19,7 @@ from garminagent.garmin.token import TOKEN_PATH
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "garmin"
 START_TIME = 1_800_000_000.0  # fixed Unix time for deterministic token expiry
 TEST_API_KEY = "test-api-key-not-real"
+FAKE_JWT_SIGNATURE = "fake-signature"
 
 
 def load_fixture(name: str) -> Any:
@@ -30,7 +31,7 @@ def make_jwt(exp: float | None) -> str:
         return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
 
     claims: dict[str, Any] = {"sub": "fake-user"} if exp is None else {"sub": "fake-user", "exp": int(exp)}
-    return f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(claims)}.fake-signature"
+    return f"{b64({'alg': 'none', 'typ': 'JWT'})}.{b64(claims)}.{FAKE_JWT_SIGNATURE}"
 
 
 def make_fit(payload: bytes = b"\x00" * 32) -> bytes:

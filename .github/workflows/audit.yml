@@ -26,3 +26,18 @@ jobs:
       - run: >-
           uv run --locked --only-group audit
           pip-audit -r requirements-audit.txt --disable-pip --require-hashes --progress-spinner off
+
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+      # Online audits (impostor commits behind pinned SHAs, known-vulnerable actions) need a
+      # read-only token; zizmor is installed from the locked audit group.
+      - run: uv run --locked --only-group audit zizmor --format github .github/
+        env:
+          GH_TOKEN: ${{ github.token }}

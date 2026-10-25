@@ -32,7 +32,7 @@ import httpx
 from dotenv import load_dotenv
 
 BASE_URL = "https://personal.connectapi.garmin.com"
-TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"
+TOKEN_PATH = "/personalapitoken-service/personal-api/personal-api-key/token"  # noqa: S105 - a URL path, not a secret
 HEADER_HINTS = ("rate", "limit", "retry", "quota", "x-", "content-type", "content-disposition")
 REQUEST_DELAY_S = 1.0
 DATA_KEY = re.compile(r"^[\d-]+$")
