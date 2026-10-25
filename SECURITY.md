@@ -33,6 +33,7 @@ send, or depend on.
 | Malicious or compromised dependency | `uv.lock` with hashes, installed `--locked`; pip-audit gate + weekly; Dependabot with 7-day cooldown | CI, `dependabot.yml` |
 | Compromised GitHub Action or base image | SHA/digest pins; zizmor (online audits) gate + weekly; `persist-credentials: false`; least permissions; Trivy run from a pinned image in a job without secrets, after cosign verifies it was signed by Aqua's release workflow for that exact tag | workflows |
 | Distrusted or compromised CA (e.g. eMudhra, Oct 2026) | Up-to-date `certifi` (httpx's trust store) and base-image CA bundle; tool images chosen for current CA stores | `uv.lock`, Dockerfile, CI |
+| Broken or unchecked change reaches `main` | Ruleset: PR required, all CI checks and CodeQL must pass on an up-to-date branch, no direct or force pushes, no bypass | GitHub ruleset |
 | Vulnerable OS packages in the image | Trivy scan gates the image push (fixable HIGH/CRITICAL) | CI `scan` job |
 | Personal data in the repo or chat | Synthetic fixtures only; Claude Code denied `.env*` and `data/**` | tests, `.claude/settings.json`, CLAUDE.md |
 | Malicious activity file (zip bomb, wrong format) | Size cap, FIT signature check, fail loudly | `garmin/files.py` |
@@ -82,6 +83,8 @@ send, or depend on.
 | cosign signature check of the Trivy image (exact signer identity) | every push/PR, before the scan | missing or wrong signature |
 | Trivy image scan (vulnerabilities + secrets) | every push/PR | fixable HIGH/CRITICAL, any secret |
 | GitGuardian | PRs | detected secret |
+| GitHub secret scanning with push protection | every push | push containing a known secret pattern is rejected |
+| CodeQL (Python and Actions workflows) | PRs, weekly | high or higher security alerts (required by the ruleset) |
 | Dependabot (actions, Docker, compose; uv once Python 3.15 is supported) | weekly | — (opens PRs) |
 
 The image is pushed to GHCR only when lint, tests, audit and scan pass.
@@ -106,8 +109,14 @@ Releases newer than the 7-day cooldown, taken deliberately. Add a row for every 
 | 2026-10-25 | Trivy image | 0.76.1 | Security release for the eMudhra CA incident (Go 1.27.3, updated CA store). |
 | 2026-10-25 | cosign image | 3.1.4 | Its CA store drops emSign ECC Root CA - G3; 3.1.3 still trusted it (not stated in the release notes; checked in the image). |
 
-**Settings outside the repo (owner):** branch protection on `main` requiring CI; Dependabot
-alerts and security updates (Settings → Code security).
+**Repository settings (owner):** the repo is public. Ruleset `prevent-push-to-main` on the
+default branch, no bypass: no deletion, no force push, linear history, PR required (0
+approvals, conversations resolved, squash only), status checks `lint`, `test`,
+`audit / pip-audit`, `audit / zizmor`, `scan`, `image` required and up to date, CodeQL
+results required. Code security: Dependabot alerts and security updates, secret scanning with
+push protection, CodeQL default setup, private vulnerability reporting. GitHub's dependency
+graph can't process `uv.lock` with Python 3.15 yet (same limitation as Dependabot's uv
+updates). Review these settings with the 90-day routine; changing them is outside git history.
 
 ## Incident playbook
 
@@ -120,4 +129,7 @@ alerts and security updates (Settings → Code security).
 
 ## Reporting
 
-Private single-user project: report issues to the repository owner directly.
+Please report vulnerabilities privately through GitHub's
+[private vulnerability reporting](https://github.com/ilari1234/garminagent/security/advisories/new),
+not in public issues. This is a personal, single-user project without a support commitment, but
+reports are read and acted on.

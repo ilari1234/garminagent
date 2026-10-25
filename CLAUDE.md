@@ -21,7 +21,13 @@ docker compose up -d db      # local Postgres 18 on 127.0.0.1:5432
 - Tests use fakes (`tests/garmin/fakes.py`: fake server, fake clock) and synthetic fixtures.
   No live network calls in tests or CI.
 - Dependencies: `uv add` (never pip); commit `pyproject.toml` and `uv.lock` together.
-- Commit and push only when the user asks. CI must pass after every push.
+- **Branches and pull requests only.** `main` is protected by a ruleset (no direct pushes, no
+  force pushes, squash merge only, all CI checks and CodeQL required). Per task: create a branch
+  (`m3-storage`, `fix/…`, `docs/…`), commit there, push it and open a PR that fills in the
+  template's security checklist. Commit, push and merge only when the user asks; merge only
+  with all checks green, using `gh pr merge --squash --delete-branch`.
+- The repo is **public**: everything committed, every CI log and every PR comment is visible
+  to anyone.
 
 ## Security rules (non-negotiable)
 
