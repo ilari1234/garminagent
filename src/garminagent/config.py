@@ -4,6 +4,7 @@ Everything that differs between local Docker and AWS is configured here, so the 
 itself never changes between environments.
 """
 
+import re
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -15,7 +16,12 @@ from sqlalchemy import make_url
 
 from garminagent.urls import validate_base_url
 
-DEFAULT_DATABASE_URL = "postgresql+psycopg://garminagent:garminagent@127.0.0.1:5432/garminagent"
+# Local defaults match docker-compose: the app connects as the least-privilege role, migrations
+# as the schema owner. On AWS both are set explicitly.
+DEFAULT_DATABASE_URL = "postgresql+psycopg://garminagent_app:garminagent_app@127.0.0.1:5432/garminagent"
+DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://garminagent:garminagent@127.0.0.1:5432/garminagent"
+# Postgres role names are interpolated into GRANT statements, so only plain identifiers.
+ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
 class Settings(BaseSettings):
@@ -26,7 +32,11 @@ class Settings(BaseSettings):
     garmin_base_url: str = "https://personal.connectapi.garmin.com"
     garmin_min_request_interval: float = 1.0
     garmin_max_retries: int = 4
+    # The app connects with a least-privilege role (data access only); migrations run as the
+    # schema owner.
     database_url: SecretStr = SecretStr(DEFAULT_DATABASE_URL)
+    migration_database_url: SecretStr = SecretStr(DEFAULT_MIGRATION_DATABASE_URL)
+    db_app_role: str = "garminagent_app"
     data_dir: Path = Path("data")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["text", "json"] = "text"
@@ -36,19 +46,36 @@ class Settings(BaseSettings):
     def _base_url_is_safe(cls, value: str) -> str:
         return validate_base_url(value)
 
+    @field_validator("db_app_role")
+    @classmethod
+    def _role_is_identifier(cls, value: str) -> str:
+        if not ROLE_NAME.fullmatch(value):
+            raise ValueError("DB_APP_ROLE must be a lowercase identifier (letters, digits, underscore)")
+        return value
+
+    @property
+    def blob_dir(self) -> Path:
+        return self.data_dir / "blobs"
+
     def redacted(self) -> dict[str, str | float | int | None]:
-        """Settings for display: the API key is masked and the database password hidden."""
+        """Settings for display: the API key is masked and database passwords hidden."""
         return {
             "garmin_personal_api_key": "set" if self.garmin_personal_api_key else None,
             "garmin_api_key_expires": self.garmin_api_key_expires.isoformat() if self.garmin_api_key_expires else None,
             "garmin_base_url": self.garmin_base_url,
             "garmin_min_request_interval": self.garmin_min_request_interval,
             "garmin_max_retries": self.garmin_max_retries,
-            "database_url": make_url(self.database_url.get_secret_value()).render_as_string(hide_password=True),
+            "database_url": _hide_password(self.database_url),
+            "migration_database_url": _hide_password(self.migration_database_url),
+            "db_app_role": self.db_app_role,
             "data_dir": str(self.data_dir),
             "log_level": self.log_level,
             "log_format": self.log_format,
         }
+
+
+def _hide_password(url: SecretStr) -> str:
+    return make_url(url.get_secret_value()).render_as_string(hide_password=True)
 
 
 @lru_cache

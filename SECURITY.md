@@ -37,6 +37,13 @@ send, or depend on.
 | Vulnerable OS packages in the image | Trivy scan gates the image push (fixable HIGH/CRITICAL) | CI `scan` job |
 | Personal data in the repo or chat | Synthetic fixtures only; Claude Code denied `.env*` and `data/**` | tests, `.claude/settings.json`, CLAUDE.md |
 | Malicious activity file (zip bomb, wrong format) | Size cap, FIT signature check, fail loudly | `garmin/files.py` |
+| Path traversal via zip member names | Blob keys built from IDs and SHA-256 only; keys validated (no `.`/`..`/absolute/backslash) and resolved inside the store root; member names stored as data | `storage/blobs.py`, `storage/repository.py` |
+| App compromise or bug alters the schema | App connects as `garminagent_app` (DML only, no DDL/TRUNCATE, read-only `alembic_version`); migrations run as the owner in a separate one-shot process | migration 0001, `docker/postgres/init`, compose |
+| SQL injection | SQLAlchemy Core with bound parameters everywhere; the one interpolated identifier (app role) is regex-validated twice | `storage/repository.py`, migration 0001, `config.py` |
+| Database traffic readable on a network | Warning on every connection path when a non-local host lacks `sslmode=require/verify-*`; AWS must use `verify-full` | `storage/db.py` |
+| Raw store readable by other local users | Files 0600, directories 0700 (POSIX); in the image `/data` belongs to the non-root `app` user | `storage/blobs.py`, Dockerfile |
+| Location or free text spreading into analysis | Normalized tables have no GPS or name/description columns (schema guard test); raw layer keeps them only for re-parsing | `storage/models.py`, `tests/storage/test_schema.py` |
+| Data kept longer than wanted | `garminagent purge-data --yes` deletes all rows (one transaction, cascading) and then all blobs; re-runnable | `storage/repository.py`, `cli.py` |
 | Data sent to a model (phase 3) | See *Data handling* in docs/plan.md; OWASP LLM/Agentic mapping below | planned |
 | Unsafe training plan (phase 3) | Load-progression and recovery limits as code; evaluator agent; user approval before a plan is active | planned |
 
@@ -68,9 +75,23 @@ send, or depend on.
 
 | Transition | Review focus |
 |---|---|
-| M3 storage | DB credentials and roles, raw-store file permissions, encryption at rest, retention and deletion |
+| M3 storage ✅ 2026-10-25 | DB credentials and roles, raw-store file permissions, encryption at rest, retention and deletion — results below |
 | Phase 3 agents | Walk the OWASP LLM and Agentic tables above; safety limits as code; tool permissions; prompt-injection tests |
 | AWS deployment | Least-privilege IAM, Secrets Manager, Bedrock retention SCP, EU regions only, CloudTrail, KMS, budget alarms |
+
+### M3 storage review (2026-10-25)
+
+| Area | Decision / result |
+|---|---|
+| DB roles | Owner role runs migrations only; app role `garminagent_app` has SELECT/INSERT/UPDATE/DELETE on data tables, SELECT on `alembic_version`, nothing else. Verified by tests that run as the app role and attempt CREATE/DROP/ALTER/TRUNCATE/role creation and alembic_version writes. |
+| Credentials | Two URLs (`DATABASE_URL`, `MIGRATION_DATABASE_URL`), both `SecretStr`, passwords hidden in `config` output and never logged; Alembic gets the URL in memory, not via `alembic.ini`. Local compose passwords are local-only defaults; on AWS both come from Secrets Manager. |
+| Tests vs. real data | Integration tests create a throwaway database and role per run and drop them afterwards; they never touch the compose database. |
+| Raw store | Local filesystem behind a `BlobStore` interface (S3 later); content-addressed keys; 0600/0700 permissions on POSIX; atomic writes. |
+| Encryption at rest | Not implemented in code by design. Local: rely on full-disk encryption (BitLocker / FileVault / LUKS) — recommended for the developer machine. AWS: RDS and S3 with KMS. |
+| Encryption in transit | Compose traffic stays on the Docker network; any non-local DB without TLS is warned about. AWS: `sslmode=verify-full`. |
+| Retention and deletion | Data is kept until the owner deletes it; `purge-data` removes everything (rows, then blobs) and can be re-run. Revisions of raw payloads are kept (dedupe by content hash) so analysis can be reproduced. |
+| Data minimization | Normalized layer: no GPS, names or descriptions (enforced by a test). Raw layer keeps Garmin's payloads verbatim, including GPS in summaries and FIT files, for re-parsing; it never feeds agents. |
+| `/security-review` | No findings at the reporting bar. One hardening note (migrations bypassed the TLS warning) fixed before merge. |
 
 ## Automated checks
 

@@ -2,6 +2,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from garminagent.config import DEFAULT_DATABASE_URL, Settings
 
@@ -35,6 +36,26 @@ def test_empty_values_fall_back_to_defaults(tmp_path: Path) -> None:
     settings = Settings()
     assert settings.garmin_personal_api_key is None
     assert settings.garmin_api_key_expires is None
+
+
+def test_database_defaults_use_separate_roles() -> None:
+    settings = Settings()
+    assert "garminagent_app:" in settings.database_url.get_secret_value()
+    assert "//garminagent:" in settings.migration_database_url.get_secret_value()
+    assert settings.blob_dir == Path("data") / "blobs"
+
+
+@pytest.mark.parametrize("role", ["garminagent_app", "a", "_x1"])
+def test_valid_app_roles(monkeypatch: pytest.MonkeyPatch, role: str) -> None:
+    monkeypatch.setenv("DB_APP_ROLE", role)
+    assert Settings().db_app_role == role
+
+
+@pytest.mark.parametrize("role", ["App", "x; DROP TABLE athlete", "1abc", "a-b", "x" * 64, "a b"])
+def test_invalid_app_roles_are_rejected(monkeypatch: pytest.MonkeyPatch, role: str) -> None:
+    monkeypatch.setenv("DB_APP_ROLE", role)
+    with pytest.raises(ValidationError, match="DB_APP_ROLE"):
+        Settings()
 
 
 def test_redacted_hides_secrets(monkeypatch: pytest.MonkeyPatch) -> None:

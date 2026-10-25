@@ -161,9 +161,13 @@ Security is part of each milestone's definition of done, not a later phase:
   limits plus `date_chunks`, activity paging, activity zip → validated FIT files, pacing
   (1 req/s), backoff on 429/5xx/network errors with a hard stop on long `Retry-After`;
   `garminagent auth-check`; tests against a fake server with synthetic fixtures.
-- **M3 — Storage 🔒:** SQLAlchemy models, Alembic migrations, raw store. Review: DB roles
-  and credentials, raw-store file permissions, encryption at rest, retention and deletion.
-- **M4 — Sync:** backfill + incremental, activity file download and FIT parsing.
+- **M3 — Storage 🔒:** `garminagent.storage` — schema (raw payloads with content-hash
+  versioning, activity files, sync cursors, normalized `activity` and `daily_summary`), Alembic
+  migrations run by `garminagent db-upgrade`, a `BlobStore` with a local implementation,
+  repository upserts, `purge-data`; `garminagent.normalize` for activities and daily summaries;
+  least-privilege app role in compose. Review results in [SECURITY.md](../SECURITY.md#m3-storage-review-2026-10-25).
+- **M4 — Sync:** backfill + incremental using the cursors, activity file download, FIT parsing,
+  normalizers and tables for the remaining datasets (sleep, HRV, stress, body battery, weight).
 - **M5 — Run it:** scheduled containerized sync, operational docs.
 
 ## Later phases (outline)
