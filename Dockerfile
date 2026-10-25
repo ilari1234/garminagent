@@ -1,8 +1,11 @@
 # syntax=docker/dockerfile:1
 
+# Base images are pinned by digest (tags can be moved); Dependabot keeps them current.
+FROM ghcr.io/astral-sh/uv:0.12.15@sha256:62f8c047d0a0e9ece6b53fc63df902585a67a47a7f318ddec4a37db586edc8e3 AS uv
+
 # --- build: resolve the locked environment with uv ---
-FROM python:3.15-slim AS builder
-COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /bin/uv
+FROM python:3.15-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS builder
+COPY --from=uv /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
@@ -21,7 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
 # --- runtime: just Python and the virtualenv, running as non-root ---
-FROM python:3.15-slim
+FROM python:3.15-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir /data && chown app:app /data
 WORKDIR /app

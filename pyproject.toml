@@ -41,6 +41,9 @@ addopts = "-ra --strict-markers"
 markers = ["integration: needs a Postgres database at TEST_DATABASE_URL"]
 
 [dependency-groups]
+audit = [
+    "pip-audit>=2.10.1",
+]
 dev = [
     "pyright>=1.1.414",
     "pytest>=9.1.1",

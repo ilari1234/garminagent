@@ -1,0 +1,29 @@
+name: Dependency audit
+
+# Runs as part of CI (gating the image) and weekly on its own, so newly published
+# vulnerabilities surface even when nothing is pushed.
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.12.15"
+          enable-cache: true
+      # Audit exactly what uv.lock pins (all groups, with hashes), not a fresh resolution.
+      - run: uv export --locked --all-groups --no-emit-project --format requirements-txt -o requirements-audit.txt
+      - run: >-
+          uv run --locked --only-group audit
+          pip-audit -r requirements-audit.txt --disable-pip --require-hashes --progress-spinner off

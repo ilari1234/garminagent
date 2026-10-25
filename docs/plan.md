@@ -124,9 +124,13 @@ src/garminagent/
   separate `backfill` command walks history in the largest chunks each endpoint allows.
 - **Key expiry:** the key's expiry date is configured; the app warns ahead of time and fails
   clearly on 401 from the token endpoint.
-- **Tooling:** ruff, pyright, pytest (+ respx for HTTP mocks, Postgres via testcontainers),
-  pre-commit, GitHub Actions (lint, test, build image), multi-stage Dockerfile,
-  docker-compose (app + postgres).
+- **Tooling:** ruff, pyright (strict), pytest (httpx `MockTransport` fakes; Postgres tests via
+  the CI service / compose), GitHub Actions (lint, test, dependency audit, build image),
+  multi-stage Dockerfile, docker-compose (app + postgres).
+- **Supply chain:** actions pinned to commit SHAs, base images pinned by digest, uv version
+  pinned in CI; dependencies locked with hashes (`uv.lock`, installed `--locked`); Dependabot
+  weekly for actions, uv, Dockerfile and compose with a 7-day cooldown; `pip-audit` over the
+  exported lock gates the image build and runs weekly; workflows checked with zizmor.
 
 ## Phase 1 milestones
 
