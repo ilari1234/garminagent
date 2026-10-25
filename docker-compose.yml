@@ -27,7 +27,7 @@ services:
     build: .
     image: garminagent:local
     environment:
-      MIGRATION_DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD:?}@db:5432/garminagent
+      MIGRATION_DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD}@db:5432/garminagent
     depends_on:
       db:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD:?}@db:5432/garminagent
+      DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD}@db:5432/garminagent
     volumes:
       - appdata:/data
     depends_on:
