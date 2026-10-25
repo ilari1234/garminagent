@@ -9,9 +9,9 @@ services:
     image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     environment:
       POSTGRES_USER: garminagent
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
       POSTGRES_DB: garminagent
-      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
     volumes:
       - pgdata:/var/lib/postgresql
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -27,7 +27,7 @@ services:
     build: .
     image: garminagent:local
     environment:
-      MIGRATION_DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/garminagent
+      MIGRATION_DATABASE_URL: postgresql+psycopg://garminagent:${POSTGRES_PASSWORD:?}@db:5432/garminagent
     depends_on:
       db:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}@db:5432/garminagent
+      DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD:?}@db:5432/garminagent
     volumes:
       - appdata:/data
     depends_on:
