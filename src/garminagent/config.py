@@ -16,10 +16,11 @@ from sqlalchemy import make_url
 
 from garminagent.urls import validate_base_url
 
-# Local defaults match docker-compose: the app connects as the least-privilege role, migrations
-# as the schema owner. On AWS both are set explicitly.
-DEFAULT_DATABASE_URL = "postgresql+psycopg://garminagent_app:garminagent_app@127.0.0.1:5432/garminagent"
-DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://garminagent:garminagent@127.0.0.1:5432/garminagent"
+# Local defaults point at the compose database: the app as the least-privilege role, migrations
+# as the schema owner. They carry no password on purpose; set DATABASE_URL and
+# MIGRATION_DATABASE_URL (with passwords) in .env, or as secrets on AWS.
+DEFAULT_DATABASE_URL = "postgresql+psycopg://garminagent_app@127.0.0.1:5432/garminagent"
+DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://garminagent@127.0.0.1:5432/garminagent"
 # Postgres role names are interpolated into GRANT statements, so only plain identifiers.
 ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 

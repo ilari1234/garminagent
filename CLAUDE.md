@@ -41,6 +41,10 @@ docker compose up -d db      # local Postgres 18 on 127.0.0.1:5432
   exception messages. Errors and logs carry method, path, status — never bodies or headers.
 - Test data is synthetic: fake names, coordinates 0.0/0.0, fake IDs. Never copy real values into
   tests, fixtures, docs, commit messages or chat.
+- No credential-shaped literals anywhere, not even fake ones (`user:pw@host`, `PASSWORD=...`):
+  build test credentials at runtime (`secrets.token_hex`, `URL.create`), and give compose and
+  config no default passwords. GitGuardian and GitHub secret scanning flag them, and a
+  "local-only" default is still a real password.
 - When inspecting downloaded or user data is unavoidable, write a script that reports structure
   (types, counts, formats), not values.
 

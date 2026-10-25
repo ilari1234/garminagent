@@ -1,8 +1,10 @@
+import secrets
 from datetime import date
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import URL
 
 from garminagent.config import DEFAULT_DATABASE_URL, Settings
 
@@ -40,8 +42,8 @@ def test_empty_values_fall_back_to_defaults(tmp_path: Path) -> None:
 
 def test_database_defaults_use_separate_roles() -> None:
     settings = Settings()
-    assert "garminagent_app:" in settings.database_url.get_secret_value()
-    assert "//garminagent:" in settings.migration_database_url.get_secret_value()
+    assert settings.database_url.get_secret_value().startswith("postgresql+psycopg://garminagent_app@")
+    assert settings.migration_database_url.get_secret_value().startswith("postgresql+psycopg://garminagent@")
     assert settings.blob_dir == Path("data") / "blobs"
 
 
@@ -60,8 +62,10 @@ def test_invalid_app_roles_are_rejected(monkeypatch: pytest.MonkeyPatch, role: s
 
 def test_redacted_hides_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GARMIN_PERSONAL_API_KEY", "secret-key")
-    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://user:hunter2@db:5432/app")
+    password = secrets.token_hex(8)  # built at runtime: no credential-shaped literals in the repo
+    url = URL.create("postgresql+psycopg", username="user", password=password, host="db", port=5432, database="app")
+    monkeypatch.setenv("DATABASE_URL", url.render_as_string(hide_password=False))
     shown = str(Settings().redacted())
     assert "secret-key" not in shown
-    assert "hunter2" not in shown
+    assert password not in shown
     assert "postgresql+psycopg://user:***@db:5432/app" in shown
