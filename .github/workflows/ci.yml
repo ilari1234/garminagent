@@ -13,9 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 # Third-party actions are pinned to full commit SHAs (tags can be moved); Dependabot keeps
-# them current. Keep the uv version in step with the uv image in the Dockerfile.
-env:
-  UV_VERSION: "0.12.15"
+# them current. setup-uv installs the uv version from `required-version` in pyproject.toml.
 
 jobs:
   lint:
@@ -26,7 +24,6 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked
       - run: uv run ruff check
@@ -57,7 +54,6 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          version: ${{ env.UV_VERSION }}
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest --cov=garminagent --cov-report=term-missing

@@ -128,7 +128,7 @@ src/garminagent/
   the CI service / compose), GitHub Actions (lint, test, dependency audit, build image),
   multi-stage Dockerfile, docker-compose (app + postgres).
 - **Supply chain:** actions pinned to commit SHAs, base images pinned by digest, uv version
-  pinned in CI; dependencies locked with hashes (`uv.lock`, installed `--locked`); Dependabot
+  pinned once (`required-version` in pyproject.toml, read by CI and enforced by uv); dependencies locked with hashes (`uv.lock`, installed `--locked`); Dependabot
   weekly for actions, uv, Dockerfile and compose with a 7-day cooldown; `pip-audit` over the
   exported lock gates the image build and runs weekly; workflows checked with zizmor.
 

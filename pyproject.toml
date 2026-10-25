@@ -19,8 +19,14 @@ dependencies = [
 garminagent = "garminagent.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.12.15,<0.13.0"]
+requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+# The single source for the uv version: CI's setup-uv reads it, and uv refuses to run the
+# project with any other version (locally and in the Docker build). When upgrading, change
+# this, the uv image in the Dockerfile and the uv_build bound above together.
+required-version = "==0.13.5"
 
 [tool.ruff]
 line-length = 120
