@@ -27,18 +27,22 @@ def parse_activity_file(activity_id: int, content: bytes) -> ActivityFile:
     if is_fit(content):
         return ActivityFile(activity_id, content, {f"{activity_id}.fit": content})
     if not zipfile.is_zipfile(io.BytesIO(content)):
-        raise UnexpectedFileError(f"activity {activity_id}: download is neither a zip nor a FIT file")
+        raise UnexpectedFileError(f"activity {activity_id}: download is neither a zip nor a FIT file", "not_zip_or_fit")
 
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
         members = [m for m in archive.infolist() if not m.is_dir()]
         if sum(m.file_size for m in members) > MAX_UNCOMPRESSED_BYTES:
-            raise UnexpectedFileError(f"activity {activity_id}: zip expands beyond {MAX_UNCOMPRESSED_BYTES} bytes")
+            raise UnexpectedFileError(
+                f"activity {activity_id}: zip expands beyond {MAX_UNCOMPRESSED_BYTES} bytes", "too_large"
+            )
         fit_files = {m.filename: archive.read(m) for m in members if m.filename.lower().endswith(".fit")}
 
     if not fit_files:
         names = sorted(m.filename.rsplit(".", 1)[-1] for m in members)
-        raise UnexpectedFileError(f"activity {activity_id}: zip has no .fit member (extensions: {names})")
+        raise UnexpectedFileError(
+            f"activity {activity_id}: zip has no .fit member (extensions: {names})", "no_fit_member"
+        )
     for name, data in fit_files.items():
         if not is_fit(data):
-            raise UnexpectedFileError(f"activity {activity_id}: {name!r} lacks the FIT signature")
+            raise UnexpectedFileError(f"activity {activity_id}: {name!r} lacks the FIT signature", "bad_fit_signature")
     return ActivityFile(activity_id, content, fit_files)

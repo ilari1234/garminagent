@@ -184,6 +184,17 @@ def activities_without_file(session: Session, athlete_id: int, limit: int) -> li
     )
 
 
+def count_activities_without_file(session: Session, athlete_id: int) -> int:
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(Activity)
+            .where(Activity.athlete_id == athlete_id, Activity.file_status.is_(None))
+        )
+        or 0
+    )
+
+
 def set_file_status(session: Session, athlete_id: int, activity_id: int, status: str) -> None:
     session.execute(
         update(Activity)

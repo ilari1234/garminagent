@@ -36,6 +36,7 @@ from garminagent.storage.blobs import BlobStore
 from garminagent.storage.repository import (
     SyncRange,
     activities_without_file,
+    count_activities_without_file,
     ensure_athlete,
     get_cursor,
     save_activity_file,
@@ -54,6 +55,7 @@ ACTIVITY_FILES = "activity_files"
 DEFAULT_HISTORY_DAYS = 730
 ACTIVITY_CHUNK_DAYS = 90  # small enough that an interrupted backfill loses little work
 FILE_BATCH = 50
+FILE_PROGRESS_EVERY = 25
 
 
 def plan_chunks(
@@ -139,6 +141,7 @@ class Syncer:
             self._sync_activities(athlete)
             self._sync_activity_files(athlete)
         except _BudgetExhausted:
+            log.info("request budget of %d reached; run sync again to continue", self._max_requests)
             self._report.stopped = "budget"
         except GarminRateLimitError as exc:
             log.warning("stopping: %s", exc)
@@ -156,6 +159,9 @@ class Syncer:
             self._report.counts,
         )
         return self._report
+
+    def _used(self) -> tuple[int, int]:
+        return self._client.requests_made, self._max_requests
 
     def _spend(self) -> None:
         # Retries and the token request also count, so a run can exceed the budget by a few.
@@ -192,6 +198,13 @@ class Syncer:
             self._report.add(DAILY_SUMMARIES, "chunks")
             self._report.add(DAILY_SUMMARIES, "records", len(parsed.records))
             self._report.add(DAILY_SUMMARIES, "skipped", parsed.skipped)
+            log.info(
+                "daily summaries %s..%s: %d days stored (requests %d/%d)",
+                chunk.start,
+                chunk.end,
+                len(parsed.records),
+                *self._used(),
+            )
 
     def _sync_activities(self, athlete: int) -> None:
         for chunk, cursor in self._chunks(athlete, ACTIVITIES, self._activity_refetch_days, ACTIVITY_CHUNK_DAYS):
@@ -200,6 +213,7 @@ class Syncer:
             backward = cursor is not None and chunk.end < cursor.start
             order = "desc" if backward else "asc"
             offset = 0
+            pages = records = 0
             while True:
                 self._spend()
                 page = self._client.search_activities(
@@ -219,12 +233,22 @@ class Syncer:
                 self._report.add(ACTIVITIES, "pages")
                 self._report.add(ACTIVITIES, "records", len(parsed.records))
                 self._report.add(ACTIVITIES, "skipped", parsed.skipped)
+                pages += 1
+                records += len(parsed.records)
                 if len(items) < self._page_size:
                     break
                 offset += self._page_size
             with self._sessions.begin() as session:
                 set_cursor(session, athlete, ACTIVITIES, extend(cursor, chunk))
             self._report.add(ACTIVITIES, "chunks")
+            log.info(
+                "activities %s..%s: %d stored from %d pages (requests %d/%d)",
+                chunk.start,
+                chunk.end,
+                records,
+                pages,
+                *self._used(),
+            )
 
     @staticmethod
     def _finished_days(chunk: SyncRange, records: list[ActivityRecord], backward: bool) -> SyncRange | None:
@@ -241,6 +265,10 @@ class Syncer:
         return SyncRange(chunk.start, final) if final >= chunk.start else None
 
     def _sync_activity_files(self, athlete: int) -> None:
+        with self._sessions() as session:
+            pending_total = count_activities_without_file(session, athlete)
+        if pending_total:
+            log.info("activity files: %d to download", pending_total)
         tried: set[int] = set()
         while True:
             with self._sessions() as session:
@@ -251,6 +279,13 @@ class Syncer:
                 tried.add(activity_id)
                 self._spend()
                 self._download(athlete, activity_id)
+                if len(tried) % FILE_PROGRESS_EVERY == 0:
+                    log.info(
+                        "activity files: %d of %d done this run (requests %d/%d)",
+                        len(tried),
+                        pending_total,
+                        *self._used(),
+                    )
 
     def _download(self, athlete: int, activity_id: int) -> None:
         try:
@@ -260,7 +295,7 @@ class Syncer:
                 raise  # server trouble: stop the run, retry next time
             status = "unavailable"  # e.g. manual entries without a file
         except UnexpectedFileError as exc:
-            log.warning("activity file rejected: %s", exc)
+            log.warning("activity %d: file rejected (%s)", activity_id, exc.reason)
             status = "invalid"
         else:
             with self._sessions.begin() as session:

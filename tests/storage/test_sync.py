@@ -1,9 +1,10 @@
 """End-to-end sync against a fake Garmin account and a real Postgres (as the app role)."""
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -13,7 +14,7 @@ from typer.testing import CliRunner
 
 from garminagent.cli import app
 from garminagent.config import Settings
-from garminagent.garmin import GarminClient
+from garminagent.garmin import GarminClient, UnexpectedFileError
 from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.models import Activity, ActivityFile, DailySummary
 from garminagent.storage.repository import SyncRange, get_cursor
@@ -220,3 +221,50 @@ def test_cli_sync_reports_counts_only(
     assert summary["complete"] is True
     assert summary["counts"]["daily_summaries"]["records"] == 12
     assert "activityTrainingLoad" not in result.output  # no payload contents
+
+
+def _only_counts(value: object) -> bool:
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and _only_counts(v) for k, v in cast(dict[object, object], value).items())
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def test_progress_logs_carry_counts_and_dates_only(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger="garminagent.sync"):
+        run_sync(garmin, app_sessions, blobs)
+
+    records = [r for r in caplog.records if r.name == "garminagent.sync"]
+    text = "\n".join(r.getMessage() for r in records)
+    assert "daily summaries 2025-11-01..2026-01-31: 92 days stored (requests " in text
+    assert "activities 2025-11-01..2026-01-29: 30 stored from 4 pages" in text
+    assert "activity files: 31 to download" in text
+    assert "activity files: 25 of 31 done this run (requests " in text
+    assert "sync complete after" in text
+    assert "activity 2000005: file rejected (not_zip_or_fit)" in text
+
+    # Arguments are dates, counts or fixed wording, never payload values.
+    allowed_words = {"complete", *UnexpectedFileError.REASONS}
+    for record in records:
+        for arg in record.args if isinstance(record.args, tuple) else ():
+            assert isinstance(arg, date) or _only_counts(arg) or arg in allowed_words, (record.msg, arg)
+    for value in ("running", "activityTrainingLoad", "restingValue", "ACTIVITY.fit", "80.0", "3600"):
+        assert value not in text
+
+
+def test_budget_stop_is_logged(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger="garminagent.sync"):
+        report = run_sync(garmin, app_sessions, blobs, max_requests=3)
+    assert report.stopped == "budget"
+    assert "request budget of 3 reached; run sync again to continue" in caplog.text
