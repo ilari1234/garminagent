@@ -179,6 +179,11 @@ class DailySummary(Base):
     intensity_vigorous_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     calories_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     calories_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_rest_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_low_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_medium_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_high_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_end_of_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
 
@@ -234,3 +239,62 @@ class ActivityLap(Base):
             ondelete="CASCADE",
         ),
     )
+
+
+class SleepSummary(Base):
+    """One night, keyed by the date Garmin assigns it. No free text (notes, insights)."""
+
+    __tablename__ = "sleep_summary"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    calendar_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    sleep_start_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sleep_end_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sleep_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deep_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    light_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rem_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    awake_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nap_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    awake_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    avg_hr: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_stress: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_respiration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_spo2: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class HrvSummary(Base):
+    """Nightly HRV (ms) with Garmin's baseline bands and status."""
+
+    __tablename__ = "hrv_summary"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    calendar_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    last_night_avg: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    last_night_5min_high: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    weekly_avg: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    baseline_low_upper: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    baseline_balanced_low: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    baseline_balanced_upper: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class WeightDaily(Base):
+    """The day's latest weigh-in. Body composition is a sensitive category: stored for the
+    owner's analysis, and opt-in before anything reaches a model (docs/plan.md)."""
+
+    __tablename__ = "weight_daily"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    calendar_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bmi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    body_fat_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entries: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())

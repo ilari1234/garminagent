@@ -22,6 +22,7 @@ from garminagent.urls import validate_base_url
 DEFAULT_DATABASE_URL = "postgresql+psycopg://garminagent_app@127.0.0.1:5432/garminagent"
 DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://garminagent@127.0.0.1:5432/garminagent"
 # Postgres role names are interpolated into GRANT statements, so only plain identifiers.
+MIN_SYNC_REQUESTS = 10
 ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
@@ -41,7 +42,9 @@ class Settings(BaseSettings):
     # Sync: history starts at SYNC_START_DATE (default: two years back); each run makes at most
     # SYNC_MAX_REQUESTS Garmin requests, so a long backfill spreads over several runs.
     sync_start_date: date | None = None
-    sync_max_requests: int = Field(default=300, ge=1)
+    # At least 10: each run first spends ~7 requests (token, re-fetching recent days of every
+    # dataset, the newest activity page) and must have budget left to make progress.
+    sync_max_requests: int = Field(default=300, ge=MIN_SYNC_REQUESTS)
     sync_refetch_days: int = Field(default=3, ge=0)
     sync_activity_refetch_days: int = Field(default=7, ge=0)
     data_dir: Path = Path("data")

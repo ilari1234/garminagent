@@ -7,6 +7,7 @@ must commit the database delete before removing blobs. Nothing here logs payload
 import hashlib
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from garminagent.fit import ParsedFit
 from garminagent.garmin import ActivityFile as DownloadedFile
 from garminagent.garmin.files import is_fit
-from garminagent.normalize import ActivityRecord, DailySummaryRecord
+from garminagent.normalize import ActivityRecord, DailySummaryRecord, HrvRecord, SleepRecord, WeightRecord
 from garminagent.storage.blobs import BlobStore
 from garminagent.storage.models import (
     Activity,
@@ -28,8 +29,11 @@ from garminagent.storage.models import (
     Athlete,
     Base,
     DailySummary,
+    HrvSummary,
     RawPayload,
+    SleepSummary,
     SyncCursor,
+    WeightDaily,
 )
 
 log = logging.getLogger(__name__)
@@ -130,12 +134,28 @@ def upsert_daily_summaries(
     return _upsert(session, DailySummary, ["athlete_id", "calendar_date"], athlete_id, records, raw_payload_id)
 
 
+def upsert_sleep(
+    session: Session, athlete_id: int, records: list[SleepRecord], raw_payload_id: int | None = None
+) -> int:
+    return _upsert(session, SleepSummary, ["athlete_id", "calendar_date"], athlete_id, records, raw_payload_id)
+
+
+def upsert_hrv(session: Session, athlete_id: int, records: list[HrvRecord], raw_payload_id: int | None = None) -> int:
+    return _upsert(session, HrvSummary, ["athlete_id", "calendar_date"], athlete_id, records, raw_payload_id)
+
+
+def upsert_weight(
+    session: Session, athlete_id: int, records: list[WeightRecord], raw_payload_id: int | None = None
+) -> int:
+    return _upsert(session, WeightDaily, ["athlete_id", "calendar_date"], athlete_id, records, raw_payload_id)
+
+
 def _upsert(
     session: Session,
     model: type[Base],
     key_columns: list[str],
     athlete_id: int,
-    records: list[ActivityRecord] | list[DailySummaryRecord],
+    records: Sequence[ActivityRecord | DailySummaryRecord | SleepRecord | HrvRecord | WeightRecord],
     raw_payload_id: int | None,
 ) -> int:
     if not records:
@@ -261,7 +281,18 @@ class PurgeResult:
 def purge_athlete(sessions: sessionmaker[Session], blobs: BlobStore, athlete_id: int) -> PurgeResult:
     """Delete all of an athlete's data: database rows (one transaction, committed first), then
     blobs. Safe to re-run: if blob deletion fails midway, the next run removes the rest."""
-    tables = [RawPayload, ActivityFile, SyncCursor, Activity, DailySummary, ActivitySample, ActivityLap]
+    tables = [
+        RawPayload,
+        ActivityFile,
+        SyncCursor,
+        Activity,
+        DailySummary,
+        ActivitySample,
+        ActivityLap,
+        SleepSummary,
+        HrvSummary,
+        WeightDaily,
+    ]
     with sessions.begin() as session:
         rows = {
             t.__tablename__: session.scalar(select(func.count()).select_from(t).where(t.athlete_id == athlete_id)) or 0

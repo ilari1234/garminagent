@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from garminagent import __version__
-from garminagent.config import get_settings
+from garminagent.config import MIN_SYNC_REQUESTS, get_settings
 from garminagent.garmin import GarminAuthError, GarminClient, GarminError
 from garminagent.log import configure_logging
 from garminagent.storage import migrate
@@ -121,7 +121,9 @@ def sync(
     since: datetime | None = typer.Option(  # noqa: B008
         None, "--since", formats=["%Y-%m-%d"], help="Backfill from this date (default: SYNC_START_DATE or 2 years)."
     ),
-    max_requests: int | None = typer.Option(None, "--max-requests", min=1, help="Override SYNC_MAX_REQUESTS."),
+    max_requests: int | None = typer.Option(
+        None, "--max-requests", min=MIN_SYNC_REQUESTS, help="Override SYNC_MAX_REQUESTS (at least 10)."
+    ),
 ) -> None:
     """Sync daily summaries, activities and activity files from Garmin into the database.
     Resumable: re-run until the report says complete. Prints counts only."""

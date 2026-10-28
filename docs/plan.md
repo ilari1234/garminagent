@@ -176,8 +176,12 @@ Security is part of each milestone's definition of done, not a later phase:
   temperature; no GPS) and `activity_lap`; parse status and parser version per file, so a
   newer parser re-parses; runs at the end of every sync (no Garmin requests) and as
   `garminagent parse-fit`; migration 0003. License constraints in SECURITY.md.
-- **M4c — More daily data:** normalizers, tables and sync for sleep, HRV, stress, body battery
-  and weight.
+- **M4c — Wellness data:** `sleep_summary` (durations by stage, score, sleep HR, stress,
+  respiration, SpO2, timing; no free text), `hrv_summary` (nightly, weekly, baseline bands,
+  status) and `weight_daily` (latest weigh-in, BMI, body fat), each synced as a date-range
+  dataset; stress-duration and end-of-day Body Battery columns on `daily_summary` (already in
+  the daily summaries, so no extra endpoints or requests); a 4xx from one dataset skips only
+  that dataset for the run; minimum sync budget of 10; migration 0004.
 - **M5 — Run it:** scheduled containerized sync, operational docs.
 
 ## Later phases (outline)

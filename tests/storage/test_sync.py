@@ -13,12 +13,20 @@ from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from garminagent.cli import app
-from garminagent.config import Settings
+from garminagent.config import MIN_SYNC_REQUESTS, Settings
 from garminagent.garmin import GarminClient, UnexpectedFileError
 from garminagent.storage.blobs import LocalBlobStore
-from garminagent.storage.models import Activity, ActivityFile, ActivitySample, DailySummary
+from garminagent.storage.models import (
+    Activity,
+    ActivityFile,
+    ActivitySample,
+    DailySummary,
+    HrvSummary,
+    SleepSummary,
+    WeightDaily,
+)
 from garminagent.storage.repository import SyncRange, get_cursor
-from garminagent.sync import ACTIVITIES, DAILY_SUMMARIES, Syncer, SyncReport
+from garminagent.sync import ACTIVITIES, DAILY_SUMMARIES, HRV, SLEEP, WEIGHT, Syncer, SyncReport
 from tests.garmin.fakes import FakeGarmin, make_activity_fit, make_zip
 from tests.storage.conftest import PgDatabase
 
@@ -28,6 +36,9 @@ FIRST, TODAY = date(2025, 11, 1), date(2026, 1, 31)
 DAILY_PATH = "/usersummary-service/v2/dailysummaries"
 SEARCH_PATH = "/activitylist-service/activities/search/activities"
 DOWNLOAD_PATTERN = r"/download-service/files/activity/(\d+)"
+SLEEP_PATH = "/sleep-service/sleep/dailySleepSummariesByDate"
+HRV_PATTERN = r"/hrv-service/hrv/daily/([\d-]+)/([\d-]+)"
+WEIGHT_PATTERN = r"/weight-service/weight/range/([\d-]+)/([\d-]+)"
 
 
 @dataclass
@@ -55,10 +66,42 @@ class FakeAccount:
         garmin.route("GET", DAILY_PATH, self.daily)
         garmin.route("GET", SEARCH_PATH, self.search)
         garmin.route("GET", DOWNLOAD_PATTERN, self.download)
+        garmin.route("GET", SLEEP_PATH, self.sleep)
+        garmin.route("GET", HRV_PATTERN, self.hrv)
+        garmin.route("GET", WEIGHT_PATTERN, self.weight)
 
     @staticmethod
     def _range(request: httpx.Request) -> tuple[date, date]:
         return date.fromisoformat(request.url.params["startDate"]), date.fromisoformat(request.url.params["endDate"])
+
+    @staticmethod
+    def _path_range(request: httpx.Request) -> tuple[date, date]:
+        start, end = request.url.path.rsplit("/", 2)[-2:]
+        return date.fromisoformat(start), date.fromisoformat(end)
+
+    def _between(self, start: date, end: date) -> list[date]:
+        return [d for d in self.days if start <= d <= end]
+
+    def sleep(self, request: httpx.Request) -> httpx.Response:
+        items = [
+            {"calendarDate": d.isoformat(), "sleepTimeSeconds": 27000, "sleepScores": {"overall": {"value": 80}}}
+            for d in self._between(*self._range(request))
+        ]
+        return httpx.Response(200, json=items)
+
+    def hrv(self, request: httpx.Request) -> httpx.Response:
+        items = [
+            {"calendarDate": d.isoformat(), "lastNightAvg": 60, "status": "BALANCED"}
+            for d in self._between(*self._path_range(request))
+        ]
+        return httpx.Response(200, json={"userProfilePk": 1, "hrvSummaries": items})
+
+    def weight(self, request: httpx.Request) -> httpx.Response:
+        weigh_ins = [d for d in self._between(*self._path_range(request)) if d.weekday() == 0]  # Mondays
+        items = [
+            {"summaryDate": d.isoformat(), "numOfWeightEntries": 1, "latestWeight": {"weight": 72.0}} for d in weigh_ins
+        ]
+        return httpx.Response(200, json={"dailyWeightSummaries": items})
 
     def daily(self, request: httpx.Request) -> httpx.Response:
         start, end = self._range(request)
@@ -108,7 +151,13 @@ def run_sync(
 
 def count(
     sessions: sessionmaker[Session],
-    model: type[Activity] | type[DailySummary] | type[ActivityFile] | type[ActivitySample],
+    model: type[Activity]
+    | type[DailySummary]
+    | type[ActivityFile]
+    | type[ActivitySample]
+    | type[SleepSummary]
+    | type[HrvSummary]
+    | type[WeightDaily],
 ) -> int:
     with sessions() as session:
         return session.scalar(select(func.count()).select_from(model)) or 0
@@ -139,6 +188,11 @@ def test_backfill_then_incremental(
     assert count(app_sessions, ActivitySample) == 29 * 30
     assert cursor(app_sessions, DAILY_SUMMARIES) == SyncRange(FIRST, TODAY)
     assert cursor(app_sessions, ACTIVITIES) == SyncRange(FIRST, TODAY)
+    assert count(app_sessions, SleepSummary) == 92
+    assert count(app_sessions, HrvSummary) == 92
+    assert count(app_sessions, WeightDaily) == sum(1 for d in account.days if d.weekday() == 0)
+    for dataset in (SLEEP, HRV, WEIGHT):
+        assert cursor(app_sessions, dataset) == SyncRange(FIRST, TODAY)
 
     garmin.seen.clear()
     second = run_sync(garmin, app_sessions, blobs)
@@ -155,13 +209,13 @@ def test_backfill_then_incremental(
 def test_small_budget_resumes_across_runs_without_gaps(
     garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
 ) -> None:
-    reports = [run_sync(garmin, app_sessions, blobs, max_requests=4)]
+    reports = [run_sync(garmin, app_sessions, blobs, max_requests=MIN_SYNC_REQUESTS)]
     while not reports[-1].complete and len(reports) < 60:
-        reports.append(run_sync(garmin, app_sessions, blobs, max_requests=4))
+        reports.append(run_sync(garmin, app_sessions, blobs, max_requests=MIN_SYNC_REQUESTS))
 
     assert reports[0].stopped == "budget"
     assert reports[-1].complete
-    assert all(r.requests <= 5 for r in reports)  # budget plus at most the token request
+    assert all(r.requests <= MIN_SYNC_REQUESTS + 1 for r in reports)  # budget plus at most the token request
     assert count(app_sessions, DailySummary) == 92
     assert count(app_sessions, Activity) == 31
     assert file_statuses(app_sessions) == {"stored": 29, "unavailable": 1, "invalid": 1}
@@ -251,7 +305,9 @@ def test_progress_logs_carry_counts_and_dates_only(
 
     records = [r for r in caplog.records if r.name == "garminagent.sync"]
     text = "\n".join(r.getMessage() for r in records)
-    assert "daily summaries 2025-11-01..2026-01-31: 92 days stored (requests " in text
+    assert "daily_summaries 2025-11-01..2026-01-31: 92 days stored (requests " in text
+    assert "sleep 2026-01-02..2026-01-31: 30 days stored" in text
+    assert "hrv 2026-01-24..2026-01-31: 8 days stored" in text
     assert "activities 2025-11-01..2026-01-29: 30 stored from 4 pages" in text
     assert "activity files: 31 to download" in text
     assert "activity files: 25 of 31 done this run (requests " in text
@@ -259,7 +315,7 @@ def test_progress_logs_carry_counts_and_dates_only(
     assert "activity 2000005: file rejected (not_zip_or_fit)" in text
 
     # Arguments are dates, counts or fixed wording, never payload values.
-    allowed_words = {"complete", *UnexpectedFileError.REASONS}
+    allowed_words = {"complete", DAILY_SUMMARIES, SLEEP, HRV, WEIGHT, *UnexpectedFileError.REASONS}
     for record in records:
         for arg in record.args if isinstance(record.args, tuple) else ():
             assert isinstance(arg, date) or _only_counts(arg) or arg in allowed_words, (record.msg, arg)
@@ -278,3 +334,18 @@ def test_budget_stop_is_logged(
         report = run_sync(garmin, app_sessions, blobs, max_requests=3)
     assert report.stopped == "budget"
     assert "request budget of 3 reached; run sync again to continue" in caplog.text
+
+
+def test_one_refusing_endpoint_does_not_block_the_others(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != WEIGHT_PATTERN]
+    garmin.route("GET", WEIGHT_PATTERN, lambda request: httpx.Response(400, json={}))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert report.counts[WEIGHT] == {"errors": 1}
+    assert cursor(app_sessions, WEIGHT) is None  # retried next run
+    assert count(app_sessions, SleepSummary) == 92
+    assert count(app_sessions, Activity) == 31

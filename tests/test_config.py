@@ -69,3 +69,11 @@ def test_redacted_hides_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "secret-key" not in shown
     assert password not in shown
     assert "postgresql+psycopg://user:***@db:5432/app" in shown
+
+
+def test_sync_budget_has_a_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SYNC_MAX_REQUESTS", "5")
+    with pytest.raises(ValidationError, match="sync_max_requests"):
+        Settings()
+    monkeypatch.setenv("SYNC_MAX_REQUESTS", "10")
+    assert Settings().sync_max_requests == 10
