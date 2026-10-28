@@ -20,6 +20,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.fit import PARSER_VERSION, FitParseError, parse_fit
 from garminagent.garmin import (
     RANGE_LIMITS,
     GarminApiError,
@@ -38,11 +39,14 @@ from garminagent.storage.repository import (
     activities_without_file,
     count_activities_without_file,
     ensure_athlete,
+    fit_files_to_parse,
     get_cursor,
+    replace_activity_samples,
     save_activity_file,
     save_raw_payload,
     set_cursor,
     set_file_status,
+    set_parse_status,
     upsert_activities,
     upsert_daily_summaries,
 )
@@ -52,10 +56,12 @@ log = logging.getLogger(__name__)
 DAILY_SUMMARIES = "daily_summaries"
 ACTIVITIES = "activities"
 ACTIVITY_FILES = "activity_files"
+FIT_FILES = "fit_files"
 DEFAULT_HISTORY_DAYS = 730
 ACTIVITY_CHUNK_DAYS = 90  # small enough that an interrupted backfill loses little work
 FILE_BATCH = 50
 FILE_PROGRESS_EVERY = 25
+FIT_PARSE_BATCH = 50
 
 
 def plan_chunks(
@@ -132,8 +138,9 @@ class Syncer:
         self._report = SyncReport()
 
     def run(self) -> SyncReport:
-        """Sync daily summaries, then activities, then activity files. Raises GarminAuthError
-        (nothing can work without the key); every other stop is recorded in the report."""
+        """Sync daily summaries, then activities, then activity files, then parse downloaded FIT
+        files. Raises GarminAuthError (nothing can work without the key); every other stop is
+        recorded in the report. Parsing needs no Garmin requests, so it runs even after a stop."""
         with self._sessions.begin() as session:
             athlete = ensure_athlete(session)
         try:
@@ -152,6 +159,7 @@ class Syncer:
             log.error("stopping after Garmin error: %s", exc)
             self._report.stopped = "garmin_error"
         self._report.requests = self._client.requests_made
+        parse_pending_fit_files(self._sessions, self._blobs, athlete, self._report)
         log.info(
             "sync %s after %d requests: %s",
             "complete" if self._report.complete else f"stopped ({self._report.stopped})",
@@ -306,3 +314,53 @@ class Syncer:
         with self._sessions.begin() as session:
             set_file_status(session, athlete, activity_id, status)
         self._report.add(ACTIVITY_FILES, status)
+
+
+def parse_pending_fit_files(
+    sessions: sessionmaker[Session], blobs: BlobStore, athlete: int, report: SyncReport
+) -> None:
+    """Parse stored FIT files that are new or were parsed by an older parser. One FIT file per
+    activity is used (the first by name); further ones are marked skipped."""
+    seen: set[int] = set()
+    parsed_activities: set[int] = set()
+    while True:
+        with sessions() as session:
+            batch = [
+                f
+                for f in fit_files_to_parse(session, athlete, PARSER_VERSION, FIT_PARSE_BATCH)
+                if f.file_id not in seen
+            ]
+        if not batch:
+            break
+        for item in batch:
+            seen.add(item.file_id)
+            if item.activity_id in parsed_activities:
+                status = "skipped"
+            else:
+                try:
+                    parsed = parse_fit(blobs.get(item.blob_key))
+                except FitParseError as exc:
+                    log.warning("activity %d: FIT file rejected (%s)", item.activity_id, exc.reason)
+                    status = "invalid"
+                except FileNotFoundError:
+                    log.warning("activity %d: FIT file missing from the blob store", item.activity_id)
+                    status = "invalid"
+                else:
+                    with sessions.begin() as session:
+                        samples = replace_activity_samples(session, athlete, item.activity_id, parsed)
+                        set_parse_status(session, item.file_id, "parsed", PARSER_VERSION)
+                    parsed_activities.add(item.activity_id)
+                    report.add(FIT_FILES, "parsed")
+                    report.add(FIT_FILES, "samples", samples)
+                    if len(parsed_activities) % FILE_PROGRESS_EVERY == 0:
+                        log.info("FIT files: %d parsed this run", len(parsed_activities))
+                    continue
+            with sessions.begin() as session:
+                set_parse_status(session, item.file_id, status, PARSER_VERSION)
+            report.add(FIT_FILES, status)
+    if seen:
+        log.info(
+            "FIT files: %d parsed, %d samples stored",
+            len(parsed_activities),
+            report.counts.get(FIT_FILES, {}).get("samples", 0),
+        )

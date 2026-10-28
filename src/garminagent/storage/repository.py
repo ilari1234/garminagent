@@ -11,10 +11,11 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.fit import ParsedFit
 from garminagent.garmin import ActivityFile as DownloadedFile
 from garminagent.garmin.files import is_fit
 from garminagent.normalize import ActivityRecord, DailySummaryRecord
@@ -22,6 +23,8 @@ from garminagent.storage.blobs import BlobStore
 from garminagent.storage.models import (
     Activity,
     ActivityFile,
+    ActivityLap,
+    ActivitySample,
     Athlete,
     Base,
     DailySummary,
@@ -204,6 +207,52 @@ def set_file_status(session: Session, athlete_id: int, activity_id: int, status:
 
 
 @dataclass(frozen=True)
+class FitToParse:
+    file_id: int
+    activity_id: int
+    blob_key: str
+
+
+def fit_files_to_parse(session: Session, athlete_id: int, parser_version: int, limit: int) -> list[FitToParse]:
+    """FIT files never parsed, or parsed by an older parser; newest activities first."""
+    rows = session.execute(
+        select(ActivityFile.id, ActivityFile.activity_id, ActivityFile.blob_key)
+        .join(
+            Activity,
+            and_(Activity.athlete_id == ActivityFile.athlete_id, Activity.activity_id == ActivityFile.activity_id),
+        )
+        .where(
+            ActivityFile.athlete_id == athlete_id,
+            ActivityFile.kind == "fit",
+            or_(ActivityFile.parse_status.is_(None), ActivityFile.parser_version < parser_version),
+        )
+        .order_by(Activity.start_time_utc.desc(), ActivityFile.member_name)
+        .limit(limit)
+    ).all()
+    return [FitToParse(file_id=r.id, activity_id=r.activity_id, blob_key=r.blob_key) for r in rows]
+
+
+def replace_activity_samples(session: Session, athlete_id: int, activity_id: int, parsed: ParsedFit) -> int:
+    """Replace an activity's samples and laps with a fresh parse; returns samples stored."""
+    for model in (ActivitySample, ActivityLap):
+        session.execute(delete(model).where(model.athlete_id == athlete_id, model.activity_id == activity_id))
+    key = {"athlete_id": athlete_id, "activity_id": activity_id}
+    if parsed.samples:
+        session.execute(insert(ActivitySample), [{**asdict(s), **key} for s in parsed.samples])
+    if parsed.laps:
+        session.execute(insert(ActivityLap), [{**asdict(lap), **key} for lap in parsed.laps])
+    return len(parsed.samples)
+
+
+def set_parse_status(session: Session, file_id: int, status: str, parser_version: int) -> None:
+    session.execute(
+        update(ActivityFile)
+        .where(ActivityFile.id == file_id)
+        .values(parse_status=status, parser_version=parser_version)
+    )
+
+
+@dataclass(frozen=True)
 class PurgeResult:
     rows: dict[str, int]
     blobs: int
@@ -212,7 +261,7 @@ class PurgeResult:
 def purge_athlete(sessions: sessionmaker[Session], blobs: BlobStore, athlete_id: int) -> PurgeResult:
     """Delete all of an athlete's data: database rows (one transaction, committed first), then
     blobs. Safe to re-run: if blob deletion fails midway, the next run removes the rest."""
-    tables = [RawPayload, ActivityFile, SyncCursor, Activity, DailySummary]
+    tables = [RawPayload, ActivityFile, SyncCursor, Activity, DailySummary, ActivitySample, ActivityLap]
     with sessions.begin() as session:
         rows = {
             t.__tablename__: session.scalar(select(func.count()).select_from(t).where(t.athlete_id == athlete_id)) or 0

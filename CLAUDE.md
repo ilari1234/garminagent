@@ -60,7 +60,10 @@ docker compose up -d db      # local Postgres 18 on 127.0.0.1:5432
   `TRIVY_SIGNER` together.
 - Cooldown: prefer releases at least 7 days old. A newer release is fine for a security fix;
   record it in SECURITY.md's cooldown-exception table with the reason.
-- New dependency or tool: say why it's needed and check it's maintained.
+- New dependency or tool: say why it's needed, check it's maintained, and read its license.
+- `garmin-fit-sdk` is under Garmin's FIT Protocol License: never vendor or redistribute it,
+  keep the GHCR image private, don't propose a copyleft license for this repo, and keep it
+  behind `garminagent.fit` (see SECURITY.md, third-party license constraints).
 
 **Model access (phase 3)** — follow the data-handling section in docs/plan.md: Bedrock in an
 EU region with retention `none`; agents get derived metrics through logged tools; GPS, free

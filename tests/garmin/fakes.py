@@ -9,10 +9,12 @@ import zipfile
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
+from garmin_fit_sdk import Encoder
 from pydantic import SecretStr
 
 from garminagent.garmin import GarminClient
@@ -40,6 +42,36 @@ def make_fit(payload: bytes = b"\x00" * 32) -> bytes:
     """Minimal bytes with a valid 14-byte FIT header signature."""
     header = bytes([14, 0x20, 0, 0]) + len(payload).to_bytes(4, "little") + b".FIT" + b"\x00\x00"
     return header + payload
+
+
+def make_activity_fit(start: datetime, seconds: int = 60, *, heart_rate: int = 140) -> bytes:
+    """A real FIT activity file, written with Garmin's FIT SDK encoder: one record per second
+    (with a fake 0/0 position, which the parser must ignore), one lap and one session."""
+    encoder = Encoder()
+    encoder.on_mesg(0, {"type": "activity", "manufacturer": "development", "time_created": start})
+    for i in range(seconds):
+        encoder.on_mesg(
+            20,
+            {
+                "timestamp": start + timedelta(seconds=i),
+                "heart_rate": heart_rate,
+                "cadence": 85,
+                "distance": 3.0 * i,
+                "enhanced_speed": 3.0,
+                "power": 220,
+                "enhanced_altitude": 100.0,
+                "position_lat": 0,
+                "position_long": 0,
+                "temperature": 15,
+            },
+        )
+    end = start + timedelta(seconds=seconds - 1)
+    lap = {"timestamp": end, "start_time": start, "total_elapsed_time": float(seconds - 1)}
+    encoder.on_mesg(
+        19, {**lap, "total_distance": 3.0 * (seconds - 1), "avg_heart_rate": heart_rate, "message_index": 0}
+    )
+    encoder.on_mesg(18, {**lap, "sport": "running", "num_laps": 1, "message_index": 0})
+    return encoder.close()
 
 
 def make_zip(members: dict[str, bytes]) -> bytes:

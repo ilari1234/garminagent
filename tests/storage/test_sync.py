@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 
 import httpx
@@ -16,10 +16,10 @@ from garminagent.cli import app
 from garminagent.config import Settings
 from garminagent.garmin import GarminClient, UnexpectedFileError
 from garminagent.storage.blobs import LocalBlobStore
-from garminagent.storage.models import Activity, ActivityFile, DailySummary
+from garminagent.storage.models import Activity, ActivityFile, ActivitySample, DailySummary
 from garminagent.storage.repository import SyncRange, get_cursor
 from garminagent.sync import ACTIVITIES, DAILY_SUMMARIES, Syncer, SyncReport
-from tests.garmin.fakes import FakeGarmin, make_fit, make_zip
+from tests.garmin.fakes import FakeGarmin, make_activity_fit, make_zip
 from tests.storage.conftest import PgDatabase
 
 pytestmark = pytest.mark.integration
@@ -79,7 +79,12 @@ class FakeAccount:
             return httpx.Response(404, json={})
         if activity_id == self.invalid_file:
             return httpx.Response(200, content=b"<html>not a file</html>")
-        return httpx.Response(200, content=make_zip({f"{activity_id}_ACTIVITY.fit": make_fit()}))
+        start = next(
+            datetime.fromisoformat(a["startTimeGMT"]).replace(tzinfo=UTC)
+            for a in self.activities
+            if a["activityId"] == activity_id
+        )
+        return httpx.Response(200, content=make_zip({f"{activity_id}_ACTIVITY.fit": make_activity_fit(start, 30)}))
 
 
 @pytest.fixture
@@ -101,7 +106,10 @@ def run_sync(
         return Syncer(client, sessions, blobs, start=start, today=TODAY, max_requests=max_requests, page_size=10).run()
 
 
-def count(sessions: sessionmaker[Session], model: type[Activity] | type[DailySummary] | type[ActivityFile]) -> int:
+def count(
+    sessions: sessionmaker[Session],
+    model: type[Activity] | type[DailySummary] | type[ActivityFile] | type[ActivitySample],
+) -> int:
     with sessions() as session:
         return session.scalar(select(func.count()).select_from(model)) or 0
 
@@ -127,6 +135,8 @@ def test_backfill_then_incremental(
     assert count(app_sessions, Activity) == len(account.activities) == 31
     assert file_statuses(app_sessions) == {"stored": 29, "unavailable": 1, "invalid": 1}
     assert count(app_sessions, ActivityFile) == 29 * 2  # original zip + the FIT inside
+    assert report.counts["fit_files"] == {"parsed": 29, "samples": 29 * 30}
+    assert count(app_sessions, ActivitySample) == 29 * 30
     assert cursor(app_sessions, DAILY_SUMMARIES) == SyncRange(FIRST, TODAY)
     assert cursor(app_sessions, ACTIVITIES) == SyncRange(FIRST, TODAY)
 

@@ -171,8 +171,13 @@ Security is part of each milestone's definition of done, not a later phase:
   dataset (backfill extends backwards, incremental re-fetches recent days); per-run request
   budget; clean stop on rate limiting; file outcomes (stored / unavailable / invalid) so missing
   files aren't retried; migration 0002.
-- **M4b — More data:** FIT parsing (per-second samples), normalizers and tables for sleep, HRV,
-  stress, body battery and weight, synced by the same engine.
+- **M4b — FIT parsing:** `garminagent.fit` on Garmin's official `garmin-fit-sdk` —
+  per-second `activity_sample` rows (HR, cadence, power, speed, distance, altitude,
+  temperature; no GPS) and `activity_lap`; parse status and parser version per file, so a
+  newer parser re-parses; runs at the end of every sync (no Garmin requests) and as
+  `garminagent parse-fit`; migration 0003. License constraints in SECURITY.md.
+- **M4c — More daily data:** normalizers, tables and sync for sleep, HRV, stress, body battery
+  and weight.
 - **M5 — Run it:** scheduled containerized sync, operational docs.
 
 ## Later phases (outline)

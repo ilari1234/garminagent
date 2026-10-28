@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
@@ -92,9 +93,14 @@ class ActivityFile(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # FIT files only: NULL = not parsed yet, then parsed / invalid / skipped, by parser_version.
+    # A newer parser re-parses older results.
+    parse_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    parser_version: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
 
     __table_args__ = (
         CheckConstraint("kind IN ('original', 'fit')", name="kind"),
+        CheckConstraint("parse_status IN ('parsed', 'invalid', 'skipped')", name="parse_status"),
         UniqueConstraint("athlete_id", "activity_id", "kind", "sha256", name="uq_activity_file_content"),
     )
 
@@ -175,3 +181,56 @@ class DailySummary(Base):
     calories_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class ActivitySample(Base):
+    """Per-second activity data parsed from the FIT file. Deliberately no GPS: positions stay in
+    the raw file only. `elapsed_s` counts seconds from the activity's first record."""
+
+    __tablename__ = "activity_sample"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    elapsed_s: Mapped[int] = mapped_column(Integer, primary_key=True)
+    heart_rate: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    cadence: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    power_w: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    speed_mps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    altitude_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_c: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["athlete_id", "activity_id"],
+            ["activity.athlete_id", "activity.activity_id"],
+            name="fk_activity_sample_activity",
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class ActivityLap(Base):
+    """Laps or intervals from the FIT file."""
+
+    __tablename__ = "activity_lap"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    lap_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_offset_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elapsed_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timer_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_hr: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    max_hr: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    avg_power_w: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["athlete_id", "activity_id"],
+            ["activity.athlete_id", "activity.activity_id"],
+            name="fk_activity_lap_activity",
+            ondelete="CASCADE",
+        ),
+    )

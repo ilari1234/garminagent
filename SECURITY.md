@@ -38,6 +38,7 @@ send, or depend on.
 | Vulnerable OS packages in the image | Trivy scan gates the image push (fixable HIGH/CRITICAL) | CI `scan` job |
 | Personal data in the repo or chat | Synthetic fixtures only; Claude Code denied `.env*` and `data/**` | tests, `.claude/settings.json`, CLAUDE.md |
 | Malicious activity file (zip bomb, wrong format) | Size cap, FIT signature check, fail loudly | `garmin/files.py` |
+| Malformed or hostile FIT content | Garmin's maintained SDK decodes; size (64 MiB) and record (400k) caps; integrity/CRC check before reading; only known numeric fields taken, developer fields and text ignored; out-of-range values become NULL; failures marked `invalid` with a fixed reason code, never retried in a loop | `fit.py`, `sync.py` |
 | Path traversal via zip member names | Blob keys built from IDs and SHA-256 only; keys validated (no `.`/`..`/absolute/backslash) and resolved inside the store root; member names stored as data | `storage/blobs.py`, `storage/repository.py` |
 | App compromise or bug alters the schema | App connects as `garminagent_app` (DML only, no DDL/TRUNCATE, read-only `alembic_version`); migrations run as the owner in a separate one-shot process | migration 0001, `docker/postgres/init`, compose |
 | SQL injection | SQLAlchemy Core with bound parameters everywhere; the one interpolated identifier (app role) is regex-validated twice | `storage/repository.py`, migration 0001, `config.py` |
@@ -117,7 +118,7 @@ The image is pushed to GHCR only when lint, tests, audit and scan pass.
 |---|---|
 | Weekly | Read the audit results and Dependabot PRs. Image bumps: Dependabot's Docker updater ignored the cooldown once (uv 0.13.5) — check release age. uv image bumps also need `required-version` and `uv_build` in the same PR. |
 | Monthly | `uv lock --upgrade` and a PR (Dependabot can't update Python packages until it supports Python 3.15). Bump the Trivy and cosign images in ci.yml (Dependabot doesn't track them): check Aqua's advisories, take a release ≥7 days old unless it's a security fix, update `TRIVY_IMAGE` digest **and** the tag in `TRIVY_SIGNER`, and run the verify command locally first. |
-| Every 90 days | Create a new Garmin key (90-day expiry), update `.env`, delete the old key. Reread this file and the threat model. |
+| Every 90 days | Create a new Garmin key (90-day expiry), update `.env`, delete the old key. Reread this file and the threat model. Confirm the GHCR image is still private (`garmin-fit-sdk` license). |
 | On each new GitHub setting or integration | Least privilege; note it here. |
 
 ### Cooldown exceptions
@@ -139,6 +140,12 @@ results required. Code security: Dependabot alerts and security updates, secret 
 push protection, CodeQL default setup, private vulnerability reporting. GitHub's dependency
 graph can't process `uv.lock` with Python 3.15 yet (same limitation as Dependabot's uv
 updates). Review these settings with the 90-day routine; changing them is outside git history.
+
+## Third-party license constraints
+
+| Component | License | Constraint we follow |
+|---|---|---|
+| `garmin-fit-sdk` (FIT decoding) | Garmin *FIT Protocol License Agreement* (not OSI) | Use only, for our own purposes. **Never distribute it**: it is installed from PyPI, not vendored, and the **GHCR image, which contains it, must stay private**. Don't modify it (modifications are licensed back to Garmin). Don't put the repo under a copyleft license (GPL/AGPL) that would require disclosing it. Garmin may terminate with 30 days' notice, so it sits behind `fit.parse_fit` and can be swapped for `fitdecode` (MIT). Its "no safety-critical use" clause: plans are advisory, approved by the owner, with safety limits in code. |
 
 ## Incident playbook
 
