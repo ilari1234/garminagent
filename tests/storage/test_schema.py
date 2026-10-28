@@ -2,7 +2,7 @@
 
 from garminagent.storage.models import Base
 
-NORMALIZED_TABLES = ("activity", "daily_summary")
+NORMALIZED_TABLES = ("activity", "daily_summary", "activity_sample", "activity_lap")
 # Data minimization: location and free text stay in the raw layer only.
 FORBIDDEN = ("lat", "lon", "location", "name", "description", "comment", "note")
 

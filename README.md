@@ -34,6 +34,7 @@ uv run garminagent auth-check  # does the Garmin API key work? (prints only the 
 uv run garminagent db-upgrade  # apply migrations (as the schema owner)
 uv run garminagent sync       # fetch new Garmin data (resumable; re-run until complete)
 uv run garminagent sync --since 2019-01-01  # extend history backwards
+uv run garminagent parse-fit  # (re)parse downloaded FIT files; no Garmin requests
 uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)
 ```
 
@@ -51,6 +52,14 @@ budget per run (`SYNC_MAX_REQUESTS`). A long backfill therefore takes several ru
 continues where the last one stopped and prints a JSON report (counts only). Exit codes:
 `0` complete or stopped at the budget, `75` Garmin rate limited (try later), `1` error.
 Command output goes to stdout, logs to stderr.
+
+At the end of every run, `sync` also parses newly downloaded FIT files into per-second
+samples and laps (no GPS). `parse-fit` does only that step, e.g. after an upgrade that
+improves the parser.
+
+FIT decoding uses Garmin's `garmin-fit-sdk` under the *FIT Protocol License Agreement*; by
+using this project you use the SDK under those terms. Built images contain the SDK and must
+not be published (see SECURITY.md).
 
 Postgres has two roles: `garminagent` owns the schema and runs migrations, and
 `garminagent_app` (what the app connects as) can only read and write data. The app role is

@@ -17,7 +17,7 @@ from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.db import make_engine, make_session_factory
 from garminagent.storage.models import Athlete
 from garminagent.storage.repository import purge_athlete
-from garminagent.sync import DEFAULT_HISTORY_DAYS, Syncer
+from garminagent.sync import DEFAULT_HISTORY_DAYS, FIT_FILES, Syncer, SyncReport, parse_pending_fit_files
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("garminagent")
@@ -164,3 +164,24 @@ def sync(
         raise typer.Exit(code=EXIT_TEMPFAIL)
     if report.stopped == "garmin_error":
         raise typer.Exit(code=1)
+
+
+@app.command("parse-fit")
+def parse_fit_files() -> None:
+    """Parse downloaded FIT files into per-second samples and laps. Makes no Garmin requests
+    and needs no API key; files parsed by an older parser version are parsed again."""
+    settings = get_settings()
+    engine = make_engine(settings.database_url.get_secret_value())
+    sessions = make_session_factory(engine)
+    report = SyncReport()
+    try:
+        with sessions() as session:
+            athlete_id = session.scalar(select(Athlete.id).order_by(Athlete.id).limit(1))
+        if athlete_id is not None:
+            parse_pending_fit_files(sessions, LocalBlobStore(settings.blob_dir), athlete_id, report)
+    except SQLAlchemyError as exc:
+        log.error("parse-fit failed: database error %s", exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    typer.echo(json.dumps(report.counts.get(FIT_FILES, {}), indent=2))
