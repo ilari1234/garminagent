@@ -6,7 +6,8 @@ cycling), using your history from the Garmin Connect Personal API.
 
 See [docs/plan.md](docs/plan.md) for decisions, architecture and milestones,
 [SECURITY.md](SECURITY.md) for the threat model, controls and routines, and
-[CLAUDE.md](CLAUDE.md) for the rules AI-assisted sessions follow.
+[CLAUDE.md](CLAUDE.md) for the rules AI-assisted sessions follow, and
+[docs/operations.md](docs/operations.md) for running it day to day.
 
 ## Requirements
 
@@ -33,6 +34,8 @@ uv run garminagent db-check    # can we reach Postgres?
 uv run garminagent auth-check  # does the Garmin API key work? (prints only the token expiry)
 uv run garminagent db-upgrade  # apply migrations (as the schema owner)
 uv run garminagent sync       # fetch new Garmin data (resumable; re-run until complete)
+uv run garminagent schedule   # sync now and then on a schedule (what the compose scheduler runs)
+uv run garminagent status     # sync health; --max-age-hours N for health checks
 uv run garminagent sync --since 2019-01-01  # extend history backwards
 uv run garminagent parse-fit  # (re)parse downloaded FIT files; no Garmin requests
 uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)
@@ -41,10 +44,9 @@ uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)
 With Docker:
 
 ```bash
-docker compose up -d db
-docker compose run --rm migrate
-docker compose run --rm app db-check
-docker compose run --rm app sync
+docker compose up -d                 # db, migrations, and the scheduler (syncs every 6 h)
+docker compose run --rm app status   # last run, synced ranges, pending files
+docker compose run --rm app sync     # one run now
 ```
 
 `sync` fetches daily summaries (including stress and Body Battery), sleep, HRV and weight,
@@ -85,6 +87,8 @@ All settings come from environment variables (or `.env`):
 | `SYNC_MAX_REQUESTS` | `300` | Garmin requests per sync run (at 1 req/s, about 5 minutes; minimum 10) |
 | `SYNC_REFETCH_DAYS` | `3` | Recent days of daily summaries, sleep, HRV and weight re-fetched each run (Garmin revises them) |
 | `SYNC_ACTIVITY_REFETCH_DAYS` | `7` | Recent days of activities re-fetched each run (late uploads, edits) |
+| `SCHEDULE_INTERVAL_HOURS` | `6` | `schedule`: time between runs once caught up (minimum 1) |
+| `SCHEDULE_CATCH_UP_MINUTES` | `15` | `schedule`: time between runs while a backfill is in progress (minimum 5) |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `text` (`json` in the image) | `text` or `json` |
 | `GARMIN_BASE_URL` | `https://personal.connectapi.garmin.com` | Personal API base URL |

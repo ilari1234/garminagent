@@ -1,8 +1,10 @@
 """Database engine and sessions."""
 
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, make_url
+from sqlalchemy import Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session, sessionmaker
 
 log = logging.getLogger(__name__)
@@ -24,6 +26,24 @@ def warn_if_insecure(url: str) -> None:
 def make_engine(url: str) -> Engine:
     warn_if_insecure(url)
     return create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 5})
+
+
+# Arbitrary fixed key for the Postgres advisory lock that serializes sync runs.
+SYNC_LOCK_KEY = 726_473_615
+
+
+@contextmanager
+def sync_lock(engine: Engine) -> Generator[bool]:
+    """Hold a session-level advisory lock while syncing; yields False if another run holds it.
+    Postgres releases it automatically if the process dies, so a crash can't leave it stuck.
+    Advisory locks need no table privileges, so the app role can take them."""
+    with engine.connect() as conn:
+        acquired = bool(conn.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": SYNC_LOCK_KEY}).scalar())
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": SYNC_LOCK_KEY})
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

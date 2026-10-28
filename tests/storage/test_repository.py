@@ -143,6 +143,7 @@ def test_purge_removes_all_rows_and_blobs(app_sessions: sessionmaker[Session], b
         "sleep_summary": 0,
         "hrv_summary": 0,
         "weight_daily": 0,
+        "sync_run": 0,
     }
     assert result.blobs == 2
     with app_sessions() as session:

@@ -182,7 +182,11 @@ Security is part of each milestone's definition of done, not a later phase:
   dataset; stress-duration and end-of-day Body Battery columns on `daily_summary` (already in
   the daily summaries, so no extra endpoints or requests); a 4xx from one dataset skips only
   that dataset for the run; minimum sync budget of 10; migration 0004.
-- **M5 — Run it:** scheduled containerized sync, operational docs.
+- **M5 — Run it:** `garminagent schedule` (local scheduler loop, compose `scheduler` service
+  with a health check) and the one-shot `sync` for cron / ECS scheduled tasks; runs serialized
+  by a Postgres advisory lock and recorded in `sync_run`; `garminagent status` (health check
+  via `--max-age-hours`); [operations.md](operations.md) covers setup, scheduling, monitoring,
+  key rotation, upgrades, backups, deletion, AWS mapping and troubleshooting; migration 0005.
 
 ## Later phases (outline)
 
