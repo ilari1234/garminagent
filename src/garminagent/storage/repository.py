@@ -33,6 +33,7 @@ from garminagent.storage.models import (
     RawPayload,
     SleepSummary,
     SyncCursor,
+    SyncRun,
     WeightDaily,
 )
 
@@ -272,6 +273,58 @@ def set_parse_status(session: Session, file_id: int, status: str, parser_version
     )
 
 
+def count_fit_files_to_parse(session: Session, athlete_id: int, parser_version: int) -> int:
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(ActivityFile)
+            .where(
+                ActivityFile.athlete_id == athlete_id,
+                ActivityFile.kind == "fit",
+                or_(ActivityFile.parse_status.is_(None), ActivityFile.parser_version < parser_version),
+            )
+        )
+        or 0
+    )
+
+
+def all_cursors(session: Session, athlete_id: int) -> dict[str, SyncRange]:
+    rows = session.execute(
+        select(SyncCursor.dataset, SyncCursor.synced_from, SyncCursor.synced_through).where(
+            SyncCursor.athlete_id == athlete_id, SyncCursor.synced_through.is_not(None)
+        )
+    ).all()
+    return {r.dataset: SyncRange(r.synced_from or r.synced_through, r.synced_through) for r in rows}
+
+
+def record_sync_run(
+    session: Session,
+    athlete_id: int,
+    *,
+    started_at: datetime,
+    finished_at: datetime,
+    stopped: str | None,
+    requests: int,
+    counts: dict[str, dict[str, int]],
+) -> None:
+    session.add(
+        SyncRun(
+            athlete_id=athlete_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            stopped=stopped,
+            requests=requests,
+            counts=counts,
+        )
+    )
+
+
+def last_sync_run(session: Session, athlete_id: int) -> SyncRun | None:
+    return session.scalar(
+        select(SyncRun).where(SyncRun.athlete_id == athlete_id).order_by(SyncRun.finished_at.desc()).limit(1)
+    )
+
+
 @dataclass(frozen=True)
 class PurgeResult:
     rows: dict[str, int]
@@ -292,6 +345,7 @@ def purge_athlete(sessions: sessionmaker[Session], blobs: BlobStore, athlete_id:
         SleepSummary,
         HrvSummary,
         WeightDaily,
+        SyncRun,
     ]
     with sessions.begin() as session:
         rows = {

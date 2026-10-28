@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     sync_max_requests: int = Field(default=300, ge=MIN_SYNC_REQUESTS)
     sync_refetch_days: int = Field(default=3, ge=0)
     sync_activity_refetch_days: int = Field(default=7, ge=0)
+    # `garminagent schedule`: run every SCHEDULE_INTERVAL_HOURS once caught up, every
+    # SCHEDULE_CATCH_UP_MINUTES while a backfill is still in progress.
+    schedule_interval_hours: float = Field(default=6.0, ge=1.0)
+    schedule_catch_up_minutes: int = Field(default=15, ge=5)
     data_dir: Path = Path("data")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["text", "json"] = "text"
@@ -82,6 +86,8 @@ class Settings(BaseSettings):
             "sync_max_requests": self.sync_max_requests,
             "sync_refetch_days": self.sync_refetch_days,
             "sync_activity_refetch_days": self.sync_activity_refetch_days,
+            "schedule_interval_hours": self.schedule_interval_hours,
+            "schedule_catch_up_minutes": self.schedule_catch_up_minutes,
             "data_dir": str(self.data_dir),
             "log_level": self.log_level,
             "log_format": self.log_format,

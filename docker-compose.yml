@@ -33,7 +33,9 @@ services:
         condition: service_healthy
     command: ["db-upgrade"]
 
-  app:
+  # Long-running: syncs every SCHEDULE_INTERVAL_HOURS (sooner while catching up).
+  # Started by `docker compose up -d`; see docs/operations.md.
+  scheduler:
     image: garminagent:local
     env_file:
       - path: .env
@@ -45,7 +47,33 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: ["db-check"]
+    command: ["schedule"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      # Unhealthy if no run finished in 13 h (two missed 6 h intervals) or the last one failed.
+      test: ["CMD", "garminagent", "status", "--max-age-hours", "13"]
+      interval: 30m
+      timeout: 30s
+      start_period: 6h
+      retries: 1
+
+  # One-off commands: `docker compose run --rm app <command>` (sync, status, parse-fit, ...).
+  # In a profile so `docker compose up` doesn't start it.
+  app:
+    image: garminagent:local
+    profiles: ["manual"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD}@db:5432/garminagent
+    volumes:
+      - appdata:/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["status"]
 
 volumes:
   pgdata:

@@ -30,7 +30,9 @@ send, or depend on.
 | API key or token leaks (logs, errors, output, git, image) | `SecretStr`; token never persisted, `repr=False`; errors carry method/path/status only; httpx/httpcore loggers held at WARNING; `.env` gitignored and dockerignored; leak regression test over every log record in the suite; Trivy secret scan of the image; GitGuardian on PRs | `config.py`, `garmin/token.py`, `garmin/transport.py`, `log.py`, `tests/conftest.py`, CI |
 | Credentials sent to the wrong place | Base URL must be https (http only to loopback), no userinfo/query; httpx doesn't follow redirects | `urls.py`, transport |
 | Garmin throttling or locking the account | 1 req/s pacing, bounded backoff, hard stop on long `Retry-After`; per-run request budget (`SYNC_MAX_REQUESTS`); a rate-limited sync stops the whole run (exit 75) instead of continuing | transport, `sync.py` |
-| Sync output or logs exposing health data | Sync reports and logs carry counts only (tested); command output on stdout, logs on stderr | `sync.py`, `cli.py`, `log.py` |
+| Sync output or logs exposing health data | Sync reports, logs, `sync_run` history and `status` carry counts, dates and stop reasons only (tested); command output on stdout, logs on stderr | `sync.py`, `runner.py`, `cli.py`, `log.py` |
+| Overlapping syncs (manual + scheduled, or overlapping cloud tasks) doubling Garmin requests | Postgres advisory lock: a second run skips without any request | `storage/db.py`, `runner.py` |
+| Sync silently broken (expired key, repeated errors) | `sync_run` history; scheduler health check (`status --max-age-hours 13`) turns unhealthy on stale or failed runs | `runner.py`, compose |
 | Malicious or compromised dependency | `uv.lock` with hashes, installed `--locked`; pip-audit gate + weekly; Dependabot with 7-day cooldown | CI, `dependabot.yml` |
 | Compromised GitHub Action or base image | SHA/digest pins; zizmor (online audits) gate + weekly; `persist-credentials: false`; least permissions; Trivy run from a pinned image in a job without secrets, after cosign verifies it was signed by Aqua's release workflow for that exact tag | workflows |
 | Distrusted or compromised CA (e.g. eMudhra, Oct 2026) | Up-to-date `certifi` (httpx's trust store) and base-image CA bundle; tool images chosen for current CA stores | `uv.lock`, Dockerfile, CI |
@@ -118,7 +120,7 @@ The image is pushed to GHCR only when lint, tests, audit and scan pass.
 |---|---|
 | Weekly | Read the audit results and Dependabot PRs. Image bumps: Dependabot's Docker updater ignored the cooldown once (uv 0.13.5) — check release age. uv image bumps also need `required-version` and `uv_build` in the same PR. |
 | Monthly | `uv lock --upgrade` and a PR (Dependabot can't update Python packages until it supports Python 3.15). Bump the Trivy and cosign images in ci.yml (Dependabot doesn't track them): check Aqua's advisories, take a release ≥7 days old unless it's a security fix, update `TRIVY_IMAGE` digest **and** the tag in `TRIVY_SIGNER`, and run the verify command locally first. |
-| Every 90 days | Create a new Garmin key (90-day expiry), update `.env`, delete the old key. Reread this file and the threat model. Confirm the GHCR image is still private (`garmin-fit-sdk` license). |
+| Every 90 days | Create a new Garmin key (90-day expiry), update `.env`, delete the old key (steps: docs/operations.md, key rotation). Reread this file and the threat model. Confirm the GHCR image is still private (`garmin-fit-sdk` license). |
 | On each new GitHub setting or integration | Least privilege; note it here. |
 
 ### Cooldown exceptions
@@ -152,6 +154,7 @@ updates). Review these settings with the 90-day routine; changing them is outsid
 | Event | Do |
 |---|---|
 | Garmin key exposed (commit, log, chat, screenshot) | Delete the key in Garmin Connect → Personal API Key page (revokes all its tokens); create a new one; update `.env`; if committed, rewrite history is not enough — the key is burned. |
+| Backups (`data/backups/`) copied somewhere unencrypted | Treat as disclosed: delete the copies; they contain the full health history. See docs/operations.md for where backups belong. |
 | Personal data committed or pushed | Remove it from history, force-push, delete GHCR images built from it; treat the data as disclosed to anyone with repo access. |
 | Compromised dependency/action announced | Check workflow runs that used it; rotate any secret those jobs could reach; pin to a clean version. |
 | Cloud credential exposed (later) | Revoke in IAM immediately; review CloudTrail for its use. |

@@ -298,3 +298,19 @@ class WeightDaily(Base):
     entries: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class SyncRun(Base):
+    """One sync run: when, how it ended and what it stored. Counts only, never data values."""
+
+    __tablename__ = "sync_run"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    stopped: Mapped[str | None] = mapped_column(String(32), nullable=True)  # None = complete
+    requests: Mapped[int] = mapped_column(Integer)
+    counts: Mapped[Any] = mapped_column(JSONB)
+
+    __table_args__ = (Index("ix_sync_run_finished", "athlete_id", "finished_at"),)

@@ -2,7 +2,9 @@
 
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+import signal
+import threading
+from datetime import UTC, datetime
 
 import typer
 from sqlalchemy import select, text
@@ -10,14 +12,16 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from garminagent import __version__
 from garminagent.config import MIN_SYNC_REQUESTS, get_settings
-from garminagent.garmin import GarminAuthError, GarminClient, GarminError
+from garminagent.garmin import GarminClient, GarminError
 from garminagent.log import configure_logging
+from garminagent.runner import ALREADY_RUNNING, run_schedule, run_sync_once
+from garminagent.runner import status as sync_status
 from garminagent.storage import migrate
 from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.db import make_engine, make_session_factory
 from garminagent.storage.models import Athlete
 from garminagent.storage.repository import purge_athlete
-from garminagent.sync import DEFAULT_HISTORY_DAYS, FIT_FILES, Syncer, SyncReport, parse_pending_fit_files
+from garminagent.sync import FIT_FILES, SyncReport, parse_pending_fit_files
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 log = logging.getLogger("garminagent")
@@ -113,9 +117,6 @@ def auth_check() -> None:
     log.info("Garmin API key accepted; access token valid until %s", expiry)
 
 
-EXIT_TEMPFAIL = 75  # sysexits.h EX_TEMPFAIL: rate limited, try again later
-
-
 @app.command()
 def sync(
     since: datetime | None = typer.Option(  # noqa: B008
@@ -125,46 +126,61 @@ def sync(
         None, "--max-requests", min=MIN_SYNC_REQUESTS, help="Override SYNC_MAX_REQUESTS (at least 10)."
     ),
 ) -> None:
-    """Sync daily summaries, activities and activity files from Garmin into the database.
-    Resumable: re-run until the report says complete. Prints counts only."""
+    """Sync daily data, activities and activity files from Garmin into the database, once.
+    Resumable: re-run until the report says complete. Prints counts only. Skips if another
+    sync is running. Exit codes: 0 ok or budget reached, 75 rate limited, 1 error."""
+    outcome = run_sync_once(get_settings(), since=since.date() if since else None, max_requests=max_requests)
+    if outcome.report is not None:
+        report = outcome.report
+        summary = {"complete": report.complete, "stopped": report.stopped, "requests": report.requests}
+        typer.echo(json.dumps({**summary, "counts": report.counts}, indent=2))
+    elif outcome.stopped == ALREADY_RUNNING:
+        typer.echo(json.dumps({"complete": False, "stopped": ALREADY_RUNNING}, indent=2))
+    if outcome.exit_code:
+        raise typer.Exit(code=outcome.exit_code)
+
+
+@app.command()
+def schedule(
+    interval_hours: float | None = typer.Option(
+        None, "--interval-hours", min=1, help="Override SCHEDULE_INTERVAL_HOURS."
+    ),
+) -> None:
+    """Run sync now and then repeatedly: every SCHEDULE_INTERVAL_HOURS when complete, sooner
+    while catching up, later after rate limiting or errors. Stops on SIGTERM/SIGINT (e.g.
+    `docker stop`); a run cut off mid-way is safe and continues next time."""
     settings = get_settings()
-    today = datetime.now(UTC).date()
-    start = since.date() if since else settings.sync_start_date or today - timedelta(days=DEFAULT_HISTORY_DAYS)
-    engine = make_engine(settings.database_url.get_secret_value())
-    try:
-        with GarminClient.from_settings(settings) as client:
-            report = Syncer(
-                client,
-                make_session_factory(engine),
-                LocalBlobStore(settings.blob_dir),
-                start=start,
-                today=today,
-                max_requests=max_requests or settings.sync_max_requests,
-                refetch_days=settings.sync_refetch_days,
-                activity_refetch_days=settings.sync_activity_refetch_days,
-            ).run()
-    except GarminAuthError as exc:
-        log.error("Garmin authentication failed: %s", exc)
-        raise typer.Exit(code=1) from exc
-    except SQLAlchemyError as exc:
-        log.error("sync failed: database error %s", exc.__class__.__name__)
-        raise typer.Exit(code=1) from exc
-    finally:
-        engine.dispose()
-    typer.echo(
-        json.dumps(
-            {
-                "complete": report.complete,
-                "stopped": report.stopped,
-                "requests": report.requests,
-                "counts": report.counts,
-            },
-            indent=2,
-        )
+    stop = threading.Event()
+
+    def request_stop(signum: int, frame: object) -> None:
+        stop.set()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    interval_s = (interval_hours or settings.schedule_interval_hours) * 3600
+    log.info("scheduler started: every %.1f hours", interval_s / 3600)
+    run_schedule(
+        lambda: run_sync_once(settings).stopped,
+        stop.wait,
+        interval_s=interval_s,
+        catch_up_s=settings.schedule_catch_up_minutes * 60,
     )
-    if report.stopped == "rate_limited":
-        raise typer.Exit(code=EXIT_TEMPFAIL)
-    if report.stopped == "garmin_error":
+
+
+@app.command()
+def status(
+    max_age_hours: float | None = typer.Option(
+        None, "--max-age-hours", help="Exit 1 unless a run finished this recently without failing (health check)."
+    ),
+) -> None:
+    """Show sync health: last run, synced range per dataset, pending files. Counts and dates only."""
+    try:
+        report, healthy = sync_status(get_settings(), max_age_hours)
+    except SQLAlchemyError as exc:
+        log.error("status failed: database error %s", exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(report, indent=2))
+    if not healthy:
         raise typer.Exit(code=1)
 
 
