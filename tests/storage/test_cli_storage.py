@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from garminagent.cli import app
 from garminagent.garmin.files import parse_activity_file
+from garminagent.storage import migrate
 from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.models import Athlete
 from garminagent.storage.repository import ensure_athlete, save_activity_file, save_raw_payload
@@ -23,7 +24,7 @@ def test_db_upgrade_reports_revision(migrated: PgDatabase, monkeypatch: pytest.M
     monkeypatch.setenv("DB_APP_ROLE", migrated.app_role)
     result = runner.invoke(app, ["db-upgrade"])
     assert result.exit_code == 0, result.output
-    assert "revision 0001" in result.output
+    assert f"revision {migrate.head_revision()}" in result.output
 
 
 def test_purge_data_deletes_everything(
@@ -44,7 +45,7 @@ def test_purge_data_deletes_everything(
 
     result = runner.invoke(app, ["purge-data", "--yes"])
     assert result.exit_code == 0, result.output
-    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    summary = json.loads(result.stdout)  # logs go to stderr
     assert summary["rows"]["raw_payload"] == 1
     assert summary["blobs"] == 2
     with app_sessions() as session:

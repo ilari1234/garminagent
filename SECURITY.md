@@ -29,7 +29,8 @@ send, or depend on.
 |---|---|---|
 | API key or token leaks (logs, errors, output, git, image) | `SecretStr`; token never persisted, `repr=False`; errors carry method/path/status only; httpx/httpcore loggers held at WARNING; `.env` gitignored and dockerignored; leak regression test over every log record in the suite; Trivy secret scan of the image; GitGuardian on PRs | `config.py`, `garmin/token.py`, `garmin/transport.py`, `log.py`, `tests/conftest.py`, CI |
 | Credentials sent to the wrong place | Base URL must be https (http only to loopback), no userinfo/query; httpx doesn't follow redirects | `urls.py`, transport |
-| Garmin throttling or locking the account | 1 req/s pacing, bounded backoff, hard stop on long `Retry-After` | transport |
+| Garmin throttling or locking the account | 1 req/s pacing, bounded backoff, hard stop on long `Retry-After`; per-run request budget (`SYNC_MAX_REQUESTS`); a rate-limited sync stops the whole run (exit 75) instead of continuing | transport, `sync.py` |
+| Sync output or logs exposing health data | Sync reports and logs carry counts only (tested); command output on stdout, logs on stderr | `sync.py`, `cli.py`, `log.py` |
 | Malicious or compromised dependency | `uv.lock` with hashes, installed `--locked`; pip-audit gate + weekly; Dependabot with 7-day cooldown | CI, `dependabot.yml` |
 | Compromised GitHub Action or base image | SHA/digest pins; zizmor (online audits) gate + weekly; `persist-credentials: false`; least permissions; Trivy run from a pinned image in a job without secrets, after cosign verifies it was signed by Aqua's release workflow for that exact tag | workflows |
 | Distrusted or compromised CA (e.g. eMudhra, Oct 2026) | Up-to-date `certifi` (httpx's trust store) and base-image CA bundle; tool images chosen for current CA stores | `uv.lock`, Dockerfile, CI |

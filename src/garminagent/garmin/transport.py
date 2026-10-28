@@ -50,6 +50,7 @@ class GarminTransport:
         self._wall_clock = wall_clock
         self._sleep = sleep
         self._last_request: float | None = None
+        self._requests_made = 0
         self._token: AccessToken | None = None
         # Checked here as well as in Settings, so no construction path can send credentials
         # over plain http or to a URL with embedded credentials.
@@ -66,6 +67,11 @@ class GarminTransport:
 
     def close(self) -> None:
         self._http.close()
+
+    @property
+    def requests_made(self) -> int:
+        """HTTP requests sent so far, including token requests and retries."""
+        return self._requests_made
 
     @property
     def token_expires_at(self) -> float | None:
@@ -93,6 +99,7 @@ class GarminTransport:
             else:
                 auth = f"ApiKey {self._api_key.get_secret_value()}"
             self._pace()
+            self._requests_made += 1
             started = self._clock()
             try:
                 resp = self._http.request(method, path, params=query, headers={"Authorization": auth})

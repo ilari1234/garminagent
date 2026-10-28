@@ -21,4 +21,4 @@ def test_downgrade_and_upgrade_round_trip(migrated: PgDatabase, owner_engine: En
         assert set(Base.metadata.tables) <= set(inspect(engine).get_table_names())
     finally:
         engine.dispose()
-    assert migrate.current_revision(migrated.owner_url) == "0001"
+    assert migrate.current_revision(migrated.owner_url) == migrate.head_revision()

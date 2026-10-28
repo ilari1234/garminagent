@@ -166,8 +166,13 @@ Security is part of each milestone's definition of done, not a later phase:
   migrations run by `garminagent db-upgrade`, a `BlobStore` with a local implementation,
   repository upserts, `purge-data`; `garminagent.normalize` for activities and daily summaries;
   least-privilege app role in compose. Review results in [SECURITY.md](../SECURITY.md#m3-storage-review-2026-10-25).
-- **M4 — Sync:** backfill + incremental using the cursors, activity file download, FIT parsing,
-  normalizers and tables for the remaining datasets (sleep, HRV, stress, body battery, weight).
+- **M4a — Sync engine:** `garminagent.sync` and `garminagent sync` — daily summaries,
+  activities (paged, progress saved per page) and activity files; contiguous synced ranges per
+  dataset (backfill extends backwards, incremental re-fetches recent days); per-run request
+  budget; clean stop on rate limiting; file outcomes (stored / unavailable / invalid) so missing
+  files aren't retried; migration 0002.
+- **M4b — More data:** FIT parsing (per-second samples), normalizers and tables for sleep, HRV,
+  stress, body battery and weight, synced by the same engine.
 - **M5 — Run it:** scheduled containerized sync, operational docs.
 
 ## Later phases (outline)

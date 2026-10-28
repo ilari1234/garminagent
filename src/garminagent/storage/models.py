@@ -100,12 +100,14 @@ class ActivityFile(Base):
 
 
 class SyncCursor(Base):
-    """How far each dataset has been synced, so runs resume instead of starting over."""
+    """The contiguous date range [synced_from, synced_through] each dataset has been synced
+    over, so runs resume and backfills extend it instead of starting over."""
 
     __tablename__ = "sync_cursor"
 
     athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
     dataset: Mapped[str] = mapped_column(String(64), primary_key=True)
+    synced_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     synced_through: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -140,9 +142,15 @@ class Activity(Base):
     hr_zone_4_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     hr_zone_5_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
+    # Activity file download: NULL = not tried yet, then stored / unavailable / invalid. Only
+    # NULL is retried automatically, so missing files don't burn the request budget every run.
+    file_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
 
-    __table_args__ = (Index("ix_activity_start", "athlete_id", "start_time_utc"),)
+    __table_args__ = (
+        Index("ix_activity_start", "athlete_id", "start_time_utc"),
+        CheckConstraint("file_status IN ('stored', 'unavailable', 'invalid')", name="file_status"),
+    )
 
 
 class DailySummary(Base):

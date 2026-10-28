@@ -10,6 +10,7 @@ from garminagent.normalize import parse_activities, parse_daily_summaries
 from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.models import Activity, ActivityFile, Athlete, DailySummary, RawPayload, SyncCursor
 from garminagent.storage.repository import (
+    SyncRange,
     ensure_athlete,
     get_cursor,
     purge_athlete,
@@ -111,10 +112,10 @@ def test_sync_cursor(app_sessions: sessionmaker[Session]) -> None:
     with app_sessions.begin() as session:
         athlete = ensure_athlete(session)
         assert get_cursor(session, athlete, "daily_summaries") is None
-        set_cursor(session, athlete, "daily_summaries", date(2026, 10, 1))
-        set_cursor(session, athlete, "daily_summaries", date(2026, 10, 20))
+        set_cursor(session, athlete, "daily_summaries", SyncRange(date(2026, 9, 1), date(2026, 10, 1)))
+        set_cursor(session, athlete, "daily_summaries", SyncRange(date(2026, 8, 1), date(2026, 10, 20)))
     with app_sessions() as session:
-        assert get_cursor(session, athlete, "daily_summaries") == date(2026, 10, 20)
+        assert get_cursor(session, athlete, "daily_summaries") == SyncRange(date(2026, 8, 1), date(2026, 10, 20))
         assert session.scalar(select(func.count()).select_from(SyncCursor)) == 1
 
 
@@ -127,7 +128,7 @@ def test_purge_removes_all_rows_and_blobs(app_sessions: sessionmaker[Session], b
         upsert_activities(session, athlete, parse_activities(load_fixture("activities_search.json")).records, raw_id)
         upsert_daily_summaries(session, athlete, parse_daily_summaries(load_fixture("daily_summaries.json")).records)
         save_activity_file(session, blobs, athlete, parse_activity_file(42, make_zip({"a.fit": make_fit()})), T0)
-        set_cursor(session, athlete, "activities", date(2026, 10, 8))
+        set_cursor(session, athlete, "activities", SyncRange(date(2026, 10, 1), date(2026, 10, 8)))
 
     result = purge_athlete(app_sessions, blobs, athlete)
 

@@ -4,8 +4,10 @@ All data here is synthetic."""
 import base64
 import io
 import json
+import re
 import zipfile
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,16 +77,24 @@ class Seen:
 
 
 type Reply = httpx.Response | Exception
+type Handler = Callable[[httpx.Request], httpx.Response]
 
 
 @dataclass
 class FakeGarmin:
-    """Queued replies per (method, path); the last reply for a route repeats.
-    The token endpoint answers with a fresh plain-text JWT unless told otherwise."""
+    """Queued replies per (method, path); the last reply for a route repeats. Handlers matched
+    by a path pattern can compute replies from the request (e.g. query parameters). The token
+    endpoint answers with a fresh plain-text JWT unless told otherwise."""
 
     clock: FakeTime
     replies: dict[tuple[str, str], deque[Reply]] = field(default_factory=dict[tuple[str, str], deque[Reply]])
     seen: list[Seen] = field(default_factory=list[Seen])
+    routes: list[tuple[str, re.Pattern[str], Handler]] = field(
+        default_factory=list[tuple[str, re.Pattern[str], Handler]]
+    )
+
+    def route(self, method: str, pattern: str, handler: Handler) -> None:
+        self.routes.append((method, re.compile(pattern), handler))
 
     def reply(self, method: str, path: str, *replies: Reply) -> None:
         self.replies[(method, path)] = deque(replies)
@@ -98,6 +108,9 @@ class FakeGarmin:
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
         self.seen.append(Seen(request.method, path, dict(request.url.params), request.headers.get("Authorization", "")))
+        for method, pattern, route_handler in self.routes:
+            if method == request.method and pattern.fullmatch(path):
+                return route_handler(request)
         queue = self.replies.get((request.method, path))
         if queue is None:
             if request.method == "POST" and path == TOKEN_PATH:

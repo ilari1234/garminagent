@@ -28,4 +28,13 @@ class GarminApiError(GarminError):
 
 
 class UnexpectedFileError(GarminError):
-    """A downloaded activity file is not a zip of FIT files (or a bare FIT file)."""
+    """A downloaded activity file is not a zip of FIT files (or a bare FIT file).
+
+    The message may quote names from inside the download; `reason` is a fixed code that is
+    always safe to log."""
+
+    REASONS = ("not_zip_or_fit", "too_large", "no_fit_member", "bad_fit_signature")
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
