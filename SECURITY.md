@@ -44,7 +44,7 @@ send, or depend on.
 | SQL injection | SQLAlchemy Core with bound parameters everywhere; the one interpolated identifier (app role) is regex-validated twice | `storage/repository.py`, migration 0001, `config.py` |
 | Database traffic readable on a network | Warning on every connection path when a non-local host lacks `sslmode=require/verify-*`; AWS must use `verify-full` | `storage/db.py` |
 | Raw store readable by other local users | Files 0600, directories 0700 (POSIX); in the image `/data` belongs to the non-root `app` user | `storage/blobs.py`, Dockerfile |
-| Location or free text spreading into analysis | Normalized tables have no GPS or name/description columns (schema guard test); raw layer keeps them only for re-parsing | `storage/models.py`, `tests/storage/test_schema.py` |
+| Location or free text spreading into analysis | Normalized tables have no GPS or name/description/note columns (schema guard test covers every normalized table); sleep notes, feedback and insights are never read; HRV status kept only if it is an enum code; raw layer keeps everything only for re-parsing | `storage/models.py`, `normalize.py`, `tests/storage/test_schema.py` |
 | Data kept longer than wanted | `garminagent purge-data --yes` deletes all rows (one transaction, cascading) and then all blobs; re-runnable | `storage/repository.py`, `cli.py` |
 | Data sent to a model (phase 3) | See *Data handling* in docs/plan.md; OWASP LLM/Agentic mapping below | planned |
 | Unsafe training plan (phase 3) | Load-progression and recovery limits as code; evaluator agent; user approval before a plan is active | planned |

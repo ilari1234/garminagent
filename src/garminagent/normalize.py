@@ -8,6 +8,7 @@ Only training-relevant values are kept: no GPS coordinates, no names or descript
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, cast
@@ -64,6 +65,11 @@ class DailySummaryRecord:
     intensity_vigorous_min: int | None = None
     calories_total: int | None = None
     calories_active: int | None = None
+    stress_rest_min: int | None = None
+    stress_low_min: int | None = None
+    stress_medium_min: int | None = None
+    stress_high_min: int | None = None
+    body_battery_end_of_day: int | None = None
 
 
 @dataclass
@@ -178,6 +184,10 @@ class _HeartRate(_Lenient):
 class _Stress(_Lenient):
     avgLevel: int | None = None
     maxLevel: int | None = None
+    restDurationInMillis: int | None = None
+    lowStressDurationInMillis: int | None = None
+    mediumStressDurationInMillis: int | None = None
+    highStressDurationInMillis: int | None = None
 
 
 class _BodyBattery(_Lenient):
@@ -185,6 +195,7 @@ class _BodyBattery(_Lenient):
     maxValue: int | None = None
     chargedValue: int | None = None
     drainedValue: int | None = None
+    endOfDayValue: int | None = None
 
 
 class _Respiration(_Lenient):
@@ -255,8 +266,249 @@ def parse_daily_summaries(payload: Any) -> Normalized[DailySummaryRecord]:
                 intensity_vigorous_min=raw.intensityMinutes.vigorous if raw.intensityMinutes else None,
                 calories_total=raw.calories.burnedTotal if raw.calories else None,
                 calories_active=raw.calories.burnedActive if raw.calories else None,
+                stress_rest_min=_minutes(stress.restDurationInMillis) if stress else None,
+                stress_low_min=_minutes(stress.lowStressDurationInMillis) if stress else None,
+                stress_medium_min=_minutes(stress.mediumStressDurationInMillis) if stress else None,
+                stress_high_min=_minutes(stress.highStressDurationInMillis) if stress else None,
+                body_battery_end_of_day=bb.endOfDayValue if bb else None,
             )
         )
     if result.skipped:
         log.warning("skipped %d daily summary records that failed validation", result.skipped)
+    return result
+
+
+def _minutes(millis: int | None) -> int | None:
+    return round(millis / 60_000) if millis is not None and 0 <= millis <= 86_400_000 else None
+
+
+def _within(value: float | None, low: float, high: float) -> float | None:
+    return value if value is not None and low <= value <= high else None
+
+
+def _within_int(value: int | None, low: int, high: int) -> int | None:
+    return value if value is not None and low <= value <= high else None
+
+
+def _timestamp(value: Any) -> datetime | None:
+    """ISO-8601 string (per the spec) or epoch milliseconds (as Garmin's APIs often send)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        try:
+            return datetime.fromtimestamp(value / 1000, UTC)
+        except OverflowError, OSError, ValueError:
+            return None
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+    return None
+
+
+def _payload_list(payload: Any, key: str | None) -> list[object]:
+    if key is None:
+        return _as_list(payload)
+    return _as_list(cast(dict[str, object], payload).get(key)) if isinstance(payload, dict) else []
+
+
+# --- sleep (dailySleepSummariesByDate: a list of the spec's DailySleepDTO) ---
+
+DAY_S = 86_400
+
+
+@dataclass(frozen=True)
+class SleepRecord:
+    calendar_date: date
+    sleep_start_utc: datetime | None = None
+    sleep_end_utc: datetime | None = None
+    sleep_s: int | None = None
+    deep_s: int | None = None
+    light_s: int | None = None
+    rem_s: int | None = None
+    awake_s: int | None = None
+    nap_s: int | None = None
+    awake_count: int | None = None
+    sleep_score: int | None = None
+    avg_hr: float | None = None
+    avg_stress: float | None = None
+    avg_respiration: float | None = None
+    avg_spo2: float | None = None
+
+
+class _ScoreItem(_Lenient):
+    value: int | None = None
+
+
+class _SleepIn(_Lenient):
+    calendarDate: date
+    sleepStartTimestampGMT: Any = None
+    sleepEndTimestampGMT: Any = None
+    sleepTimeSeconds: int | None = None
+    deepSleepSeconds: int | None = None
+    lightSleepSeconds: int | None = None
+    remSleepSeconds: int | None = None
+    awakeSleepSeconds: int | None = None
+    napTimeSeconds: int | None = None
+    awakeCount: int | None = None
+    sleepScores: dict[str, _ScoreItem] | None = None
+    avgHeartRate: float | None = None
+    avgSleepStress: float | None = None
+    averageRespirationValue: float | None = None
+    averageSpO2Value: float | None = None
+
+
+def parse_sleep(payload: Any) -> Normalized[SleepRecord]:
+    """Sleep summaries; free text (notes, feedback, insights) is never read."""
+    result = Normalized[SleepRecord]()
+    for item in _payload_list(payload, None):
+        try:
+            raw = _SleepIn.model_validate(item)
+        except ValidationError:
+            result.skipped += 1
+            continue
+        overall = (raw.sleepScores or {}).get("overall")
+        result.records.append(
+            SleepRecord(
+                calendar_date=raw.calendarDate,
+                sleep_start_utc=_timestamp(raw.sleepStartTimestampGMT),
+                sleep_end_utc=_timestamp(raw.sleepEndTimestampGMT),
+                sleep_s=_within_int(raw.sleepTimeSeconds, 0, DAY_S),
+                deep_s=_within_int(raw.deepSleepSeconds, 0, DAY_S),
+                light_s=_within_int(raw.lightSleepSeconds, 0, DAY_S),
+                rem_s=_within_int(raw.remSleepSeconds, 0, DAY_S),
+                awake_s=_within_int(raw.awakeSleepSeconds, 0, DAY_S),
+                nap_s=_within_int(raw.napTimeSeconds, 0, DAY_S),
+                awake_count=_within_int(raw.awakeCount, 0, 500),
+                sleep_score=_within_int(overall.value if overall else None, 0, 100),
+                avg_hr=_within(raw.avgHeartRate, 20, 250),
+                avg_stress=_within(raw.avgSleepStress, 0, 100),
+                avg_respiration=_within(raw.averageRespirationValue, 1, 80),
+                avg_spo2=_within(raw.averageSpO2Value, 50, 100),
+            )
+        )
+    if result.skipped:
+        log.warning("skipped %d sleep records that failed validation", result.skipped)
+    return result
+
+
+# --- HRV (hrv/daily: {"hrvSummaries": [the spec's HrvSummaryDTO, ...]}) ---
+
+STATUS_CODE = re.compile(r"[A-Z][A-Z_]{0,31}")
+
+
+@dataclass(frozen=True)
+class HrvRecord:
+    calendar_date: date
+    last_night_avg: int | None = None
+    last_night_5min_high: int | None = None
+    weekly_avg: int | None = None
+    baseline_low_upper: int | None = None
+    baseline_balanced_low: int | None = None
+    baseline_balanced_upper: int | None = None
+    status: str | None = None
+
+
+class _Baseline(_Lenient):
+    lowUpper: int | None = None
+    balancedLow: int | None = None
+    balancedUpper: int | None = None
+
+
+class _HrvIn(_Lenient):
+    calendarDate: date
+    lastNightAvg: int | None = None
+    lastNight5MinHigh: int | None = None
+    weeklyAvg: int | None = None
+    baseline: _Baseline | None = None
+    status: str | None = None
+
+
+def _hrv_ms(value: int | None) -> int | None:
+    return _within_int(value, 1, 300)
+
+
+def parse_hrv(payload: Any) -> Normalized[HrvRecord]:
+    result = Normalized[HrvRecord]()
+    for item in _payload_list(payload, "hrvSummaries"):
+        try:
+            raw = _HrvIn.model_validate(item)
+        except ValidationError:
+            result.skipped += 1
+            continue
+        baseline = raw.baseline
+        # Status is an enum code (BALANCED, LOW, ...); anything else is not kept.
+        status = raw.status if raw.status and STATUS_CODE.fullmatch(raw.status) else None
+        result.records.append(
+            HrvRecord(
+                calendar_date=raw.calendarDate,
+                last_night_avg=_hrv_ms(raw.lastNightAvg),
+                last_night_5min_high=_hrv_ms(raw.lastNight5MinHigh),
+                weekly_avg=_hrv_ms(raw.weeklyAvg),
+                baseline_low_upper=_hrv_ms(baseline.lowUpper) if baseline else None,
+                baseline_balanced_low=_hrv_ms(baseline.balancedLow) if baseline else None,
+                baseline_balanced_upper=_hrv_ms(baseline.balancedUpper) if baseline else None,
+                status=status,
+            )
+        )
+    if result.skipped:
+        log.warning("skipped %d HRV records that failed validation", result.skipped)
+    return result
+
+
+# --- weight (weight/range: {"dailyWeightSummaries": [the spec's DailyWeightSummary, ...]}) ---
+
+
+@dataclass(frozen=True)
+class WeightRecord:
+    calendar_date: date
+    weight_kg: float | None = None
+    bmi: float | None = None
+    body_fat_pct: float | None = None
+    entries: int | None = None
+
+
+class _WeightIn(_Lenient):
+    weight: float | None = None
+    bmi: float | None = None
+    bodyFat: float | None = None
+
+
+class _WeightDayIn(_Lenient):
+    summaryDate: date
+    numOfWeightEntries: int | None = None
+    latestWeight: _WeightIn | None = None
+    allWeightMetrics: list[_WeightIn] | None = None
+
+
+def _kilograms(value: float | None) -> float | None:
+    # The spec says kilograms; Garmin's web APIs have used grams, so convert those.
+    if value is None:
+        return None
+    kg = value / 1000 if value >= 1000 else value
+    return _within(kg, 20, 300)
+
+
+def parse_weight(payload: Any) -> Normalized[WeightRecord]:
+    result = Normalized[WeightRecord]()
+    for item in _payload_list(payload, "dailyWeightSummaries"):
+        try:
+            raw = _WeightDayIn.model_validate(item)
+        except ValidationError:
+            result.skipped += 1
+            continue
+        latest = raw.latestWeight or (raw.allWeightMetrics[-1] if raw.allWeightMetrics else None)
+        result.records.append(
+            WeightRecord(
+                calendar_date=raw.summaryDate,
+                weight_kg=_kilograms(latest.weight) if latest else None,
+                bmi=_within(latest.bmi, 10, 70) if latest else None,
+                body_fat_pct=_within(latest.bodyFat, 2, 70) if latest else None,
+                entries=_within_int(raw.numOfWeightEntries, 0, 100),
+            )
+        )
+    if result.skipped:
+        log.warning("skipped %d weight records that failed validation", result.skipped)
     return result

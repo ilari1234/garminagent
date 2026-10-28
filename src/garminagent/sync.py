@@ -14,9 +14,10 @@ Only counts are logged and reported, never payload contents.
 """
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -32,7 +33,15 @@ from garminagent.garmin import (
     date_chunks,
 )
 from garminagent.garmin.client import ACTIVITY_PAGE_SIZE
-from garminagent.normalize import ActivityRecord, parse_activities, parse_daily_summaries
+from garminagent.normalize import (
+    ActivityRecord,
+    Normalized,
+    parse_activities,
+    parse_daily_summaries,
+    parse_hrv,
+    parse_sleep,
+    parse_weight,
+)
 from garminagent.storage.blobs import BlobStore
 from garminagent.storage.repository import (
     SyncRange,
@@ -49,11 +58,17 @@ from garminagent.storage.repository import (
     set_parse_status,
     upsert_activities,
     upsert_daily_summaries,
+    upsert_hrv,
+    upsert_sleep,
+    upsert_weight,
 )
 
 log = logging.getLogger(__name__)
 
 DAILY_SUMMARIES = "daily_summaries"
+SLEEP = "sleep"
+HRV = "hrv"
+WEIGHT = "weight"
 ACTIVITIES = "activities"
 ACTIVITY_FILES = "activity_files"
 FIT_FILES = "fit_files"
@@ -108,6 +123,17 @@ class SyncReport:
         counts[key] = counts.get(key, 0) + n
 
 
+@dataclass(frozen=True)
+class RangeDataset:
+    """A dataset fetched one date range per request: fetch -> normalize -> upsert."""
+
+    name: str
+    chunk_days: int
+    fetch: Callable[[date, date], Any]
+    parse: Callable[[Any], Normalized[Any]]
+    upsert: Callable[[Session, int, list[Any], int | None], int]
+
+
 class _BudgetExhausted(Exception):
     pass
 
@@ -144,7 +170,16 @@ class Syncer:
         with self._sessions.begin() as session:
             athlete = ensure_athlete(session)
         try:
-            self._sync_daily_summaries(athlete)
+            for dataset in self._range_datasets():
+                try:
+                    self._sync_range_dataset(athlete, dataset)
+                except GarminApiError as exc:
+                    if not 400 <= exc.status < 500:
+                        raise
+                    # One endpoint refusing (e.g. a feature this account lacks) must not
+                    # block the others; it is retried next run.
+                    log.warning("%s: Garmin answered HTTP %d; skipping it this run", dataset.name, exc.status)
+                    self._report.add(dataset.name, "errors")
             self._sync_activities(athlete)
             self._sync_activity_files(athlete)
         except _BudgetExhausted:
@@ -185,29 +220,51 @@ class Syncer:
             yield chunk, cursor
             cursor = extend(cursor, chunk)
 
-    def _sync_daily_summaries(self, athlete: int) -> None:
-        for chunk, cursor in self._chunks(
-            athlete, DAILY_SUMMARIES, self._refetch_days, RANGE_LIMITS["daily_summaries"]
-        ):
+    def _range_datasets(self) -> list[RangeDataset]:
+        """Datasets fetched as one request per date range. Daily summaries also carry stress
+        and Body Battery, so those need no endpoints of their own."""
+        client = self._client
+        return [
+            RangeDataset(
+                DAILY_SUMMARIES,
+                RANGE_LIMITS["daily_summaries"],
+                client.get_daily_summaries,
+                parse_daily_summaries,
+                upsert_daily_summaries,
+            ),
+            RangeDataset(SLEEP, RANGE_LIMITS["sleep"], client.get_sleep_range, parse_sleep, upsert_sleep),
+            RangeDataset(HRV, RANGE_LIMITS["hrv"], client.get_hrv_range, parse_hrv, upsert_hrv),
+            RangeDataset(
+                WEIGHT,
+                RANGE_LIMITS["weight"],
+                lambda start, end: client.get_weight_range(start, end, include_all=True),
+                parse_weight,
+                upsert_weight,
+            ),
+        ]
+
+    def _sync_range_dataset(self, athlete: int, dataset: RangeDataset) -> None:
+        for chunk, cursor in self._chunks(athlete, dataset.name, self._refetch_days, dataset.chunk_days):
             self._spend()
-            payload = self._client.get_daily_summaries(chunk.start, chunk.end)
-            parsed = parse_daily_summaries(payload)
+            payload = dataset.fetch(chunk.start, chunk.end)
+            parsed = dataset.parse(payload)
             with self._sessions.begin() as session:
                 raw_id = save_raw_payload(
                     session,
                     athlete,
-                    DAILY_SUMMARIES,
+                    dataset.name,
                     f"{chunk.start}..{chunk.end}",
                     204 if payload is None else 200,
                     payload,
                 )
-                upsert_daily_summaries(session, athlete, parsed.records, raw_id)
-                set_cursor(session, athlete, DAILY_SUMMARIES, extend(cursor, chunk))
-            self._report.add(DAILY_SUMMARIES, "chunks")
-            self._report.add(DAILY_SUMMARIES, "records", len(parsed.records))
-            self._report.add(DAILY_SUMMARIES, "skipped", parsed.skipped)
+                dataset.upsert(session, athlete, parsed.records, raw_id)
+                set_cursor(session, athlete, dataset.name, extend(cursor, chunk))
+            self._report.add(dataset.name, "chunks")
+            self._report.add(dataset.name, "records", len(parsed.records))
+            self._report.add(dataset.name, "skipped", parsed.skipped)
             log.info(
-                "daily summaries %s..%s: %d days stored (requests %d/%d)",
+                "%s %s..%s: %d days stored (requests %d/%d)",
+                dataset.name,
                 chunk.start,
                 chunk.end,
                 len(parsed.records),

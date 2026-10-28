@@ -47,8 +47,9 @@ docker compose run --rm app db-check
 docker compose run --rm app sync
 ```
 
-`sync` fetches daily summaries, then activities, then activity files, within a request
-budget per run (`SYNC_MAX_REQUESTS`). A long backfill therefore takes several runs; each run
+`sync` fetches daily summaries (including stress and Body Battery), sleep, HRV and weight,
+then activities, then activity files, within a request budget per run (`SYNC_MAX_REQUESTS`,
+at least 10). A long backfill therefore takes several runs; each run
 continues where the last one stopped and prints a JSON report (counts only). Exit codes:
 `0` complete or stopped at the budget, `75` Garmin rate limited (try later), `1` error.
 Command output goes to stdout, logs to stderr.
@@ -81,8 +82,8 @@ All settings come from environment variables (or `.env`):
 | `DB_APP_ROLE` | `garminagent_app` | Role the migrations grant data access to |
 | `DATA_DIR` | `data` (`/data` in the image) | Raw activity files (`DATA_DIR/blobs`) |
 | `SYNC_START_DATE` | two years ago | Oldest date to backfill (`YYYY-MM-DD`) |
-| `SYNC_MAX_REQUESTS` | `300` | Garmin requests per sync run (at 1 req/s, about 5 minutes) |
-| `SYNC_REFETCH_DAYS` | `3` | Recent days of daily data re-fetched each run (Garmin revises them) |
+| `SYNC_MAX_REQUESTS` | `300` | Garmin requests per sync run (at 1 req/s, about 5 minutes; minimum 10) |
+| `SYNC_REFETCH_DAYS` | `3` | Recent days of daily summaries, sleep, HRV and weight re-fetched each run (Garmin revises them) |
 | `SYNC_ACTIVITY_REFETCH_DAYS` | `7` | Recent days of activities re-fetched each run (late uploads, edits) |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `text` (`json` in the image) | `text` or `json` |
