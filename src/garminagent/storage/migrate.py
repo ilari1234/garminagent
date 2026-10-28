@@ -10,6 +10,7 @@ from importlib.resources import files
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 
 from garminagent.storage.db import make_engine
 
@@ -33,6 +34,11 @@ def downgrade(url: str, app_role: str, revision: str) -> None:
 def check(url: str, app_role: str) -> None:
     """Raise if the models and the migrations disagree."""
     command.check(alembic_config(url, app_role))
+
+
+def head_revision() -> str | None:
+    """The newest migration shipped with this version of the code."""
+    return ScriptDirectory.from_config(alembic_config("", "unused")).get_current_head()
 
 
 def current_revision(url: str) -> str | None:

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -144,21 +144,51 @@ def _upsert(
     return len(rows)
 
 
-def get_cursor(session: Session, athlete_id: int, dataset: str) -> date | None:
-    return session.scalar(
-        select(SyncCursor.synced_through).where(SyncCursor.athlete_id == athlete_id, SyncCursor.dataset == dataset)
-    )
+@dataclass(frozen=True)
+class SyncRange:
+    """An inclusive date range."""
+
+    start: date
+    end: date
 
 
-def set_cursor(session: Session, athlete_id: int, dataset: str, synced_through: date | None) -> None:
-    now = datetime.now(UTC)
-    stmt = insert(SyncCursor).values(
-        athlete_id=athlete_id, dataset=dataset, synced_through=synced_through, last_run_at=now
-    )
-    session.execute(
-        stmt.on_conflict_do_update(
-            index_elements=["athlete_id", "dataset"], set_={"synced_through": synced_through, "last_run_at": now}
+def get_cursor(session: Session, athlete_id: int, dataset: str) -> SyncRange | None:
+    """The synced range for a dataset, or None if it was never synced."""
+    row = session.execute(
+        select(SyncCursor.synced_from, SyncCursor.synced_through).where(
+            SyncCursor.athlete_id == athlete_id, SyncCursor.dataset == dataset
         )
+    ).one_or_none()
+    if row is None or row.synced_through is None:
+        return None
+    # Rows from before ranges existed have no lower end; treat them as covering one day.
+    return SyncRange(start=row.synced_from or row.synced_through, end=row.synced_through)
+
+
+def set_cursor(session: Session, athlete_id: int, dataset: str, synced: SyncRange) -> None:
+    now = datetime.now(UTC)
+    values = {"synced_from": synced.start, "synced_through": synced.end, "last_run_at": now}
+    stmt = insert(SyncCursor).values(athlete_id=athlete_id, dataset=dataset, **values)
+    session.execute(stmt.on_conflict_do_update(index_elements=["athlete_id", "dataset"], set_=values))
+
+
+def activities_without_file(session: Session, athlete_id: int, limit: int) -> list[int]:
+    """Activities whose file was never tried, newest first (most useful for planning)."""
+    return list(
+        session.scalars(
+            select(Activity.activity_id)
+            .where(Activity.athlete_id == athlete_id, Activity.file_status.is_(None))
+            .order_by(Activity.start_time_utc.desc())
+            .limit(limit)
+        )
+    )
+
+
+def set_file_status(session: Session, athlete_id: int, activity_id: int, status: str) -> None:
+    session.execute(
+        update(Activity)
+        .where(Activity.athlete_id == athlete_id, Activity.activity_id == activity_id)
+        .values(file_status=status)
     )
 
 

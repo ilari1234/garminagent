@@ -1,4 +1,7 @@
-"""Logging to stdout: readable text locally, one JSON object per line in containers."""
+"""Logging to stderr: readable text locally, one JSON object per line in containers.
+
+stderr keeps stdout free for command output (the JSON that `config`, `sync` and
+`purge-data` print), so it can be piped or parsed; containers capture both streams."""
 
 import json
 import logging
@@ -22,7 +25,7 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging(level: str = "INFO", fmt: str = "text") -> None:
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(sys.stderr)
     if fmt == "json":
         handler.setFormatter(JsonFormatter())
     else:

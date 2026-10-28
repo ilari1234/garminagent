@@ -40,5 +40,5 @@ def parse_activity_file(activity_id: int, content: bytes) -> ActivityFile:
         raise UnexpectedFileError(f"activity {activity_id}: zip has no .fit member (extensions: {names})")
     for name, data in fit_files.items():
         if not is_fit(data):
-            raise UnexpectedFileError(f"activity {activity_id}: {name} lacks the FIT signature")
+            raise UnexpectedFileError(f"activity {activity_id}: {name!r} lacks the FIT signature")
     return ActivityFile(activity_id, content, fit_files)

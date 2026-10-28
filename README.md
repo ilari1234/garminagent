@@ -32,6 +32,8 @@ uv run garminagent config      # effective settings, secrets masked
 uv run garminagent db-check    # can we reach Postgres?
 uv run garminagent auth-check  # does the Garmin API key work? (prints only the token expiry)
 uv run garminagent db-upgrade  # apply migrations (as the schema owner)
+uv run garminagent sync       # fetch new Garmin data (resumable; re-run until complete)
+uv run garminagent sync --since 2019-01-01  # extend history backwards
 uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)
 ```
 
@@ -41,7 +43,14 @@ With Docker:
 docker compose up -d db
 docker compose run --rm migrate
 docker compose run --rm app db-check
+docker compose run --rm app sync
 ```
+
+`sync` fetches daily summaries, then activities, then activity files, within a request
+budget per run (`SYNC_MAX_REQUESTS`). A long backfill therefore takes several runs; each run
+continues where the last one stopped and prints a JSON report (counts only). Exit codes:
+`0` complete or stopped at the budget, `75` Garmin rate limited (try later), `1` error.
+Command output goes to stdout, logs to stderr.
 
 Postgres has two roles: `garminagent` owns the schema and runs migrations, and
 `garminagent_app` (what the app connects as) can only read and write data. The app role is
@@ -62,6 +71,10 @@ All settings come from environment variables (or `.env`):
 | `MIGRATION_DATABASE_URL` | local Postgres as `garminagent`, no password | Schema owner, used only by `db-upgrade` |
 | `DB_APP_ROLE` | `garminagent_app` | Role the migrations grant data access to |
 | `DATA_DIR` | `data` (`/data` in the image) | Raw activity files (`DATA_DIR/blobs`) |
+| `SYNC_START_DATE` | two years ago | Oldest date to backfill (`YYYY-MM-DD`) |
+| `SYNC_MAX_REQUESTS` | `300` | Garmin requests per sync run (at 1 req/s, about 5 minutes) |
+| `SYNC_REFETCH_DAYS` | `3` | Recent days of daily data re-fetched each run (Garmin revises them) |
+| `SYNC_ACTIVITY_REFETCH_DAYS` | `7` | Recent days of activities re-fetched each run (late uploads, edits) |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `text` (`json` in the image) | `text` or `json` |
 | `GARMIN_BASE_URL` | `https://personal.connectapi.garmin.com` | Personal API base URL |

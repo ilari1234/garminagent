@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from garminagent.config import Settings, get_settings
+from tests.garmin.fakes import FakeGarmin, FakeTime
 from tests.leaks import find_leaks
 
 
@@ -46,3 +47,14 @@ def no_credentials_in_logs() -> Iterator[None]:
         root.setLevel(previous_level)
     leaks = find_leaks(records)
     assert not leaks, f"credential leaked into logs: {leaks}"
+
+
+@pytest.fixture
+def clock() -> FakeTime:
+    return FakeTime()
+
+
+@pytest.fixture
+def garmin(clock: FakeTime) -> FakeGarmin:
+    """A fake Garmin Personal API (see tests/garmin/fakes.py)."""
+    return FakeGarmin(clock)

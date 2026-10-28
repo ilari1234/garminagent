@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import make_url
 
@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(DEFAULT_DATABASE_URL)
     migration_database_url: SecretStr = SecretStr(DEFAULT_MIGRATION_DATABASE_URL)
     db_app_role: str = "garminagent_app"
+    # Sync: history starts at SYNC_START_DATE (default: two years back); each run makes at most
+    # SYNC_MAX_REQUESTS Garmin requests, so a long backfill spreads over several runs.
+    sync_start_date: date | None = None
+    sync_max_requests: int = Field(default=300, ge=1)
+    sync_refetch_days: int = Field(default=3, ge=0)
+    sync_activity_refetch_days: int = Field(default=7, ge=0)
     data_dir: Path = Path("data")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["text", "json"] = "text"
@@ -69,6 +75,10 @@ class Settings(BaseSettings):
             "database_url": _hide_password(self.database_url),
             "migration_database_url": _hide_password(self.migration_database_url),
             "db_app_role": self.db_app_role,
+            "sync_start_date": self.sync_start_date.isoformat() if self.sync_start_date else None,
+            "sync_max_requests": self.sync_max_requests,
+            "sync_refetch_days": self.sync_refetch_days,
+            "sync_activity_refetch_days": self.sync_activity_refetch_days,
             "data_dir": str(self.data_dir),
             "log_level": self.log_level,
             "log_format": self.log_format,
