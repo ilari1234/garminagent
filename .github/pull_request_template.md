@@ -1,5 +1,10 @@
 ## What and why
 
+## Project state
+
+- [ ] Architecture, schema, contracts or conventions changed? ADR added or updated, and
+      `PROJECT_STATE.md` updated in this PR.
+
 ## Security checklist
 
 See [SECURITY.md](../SECURITY.md#security-in-every-milestone).
