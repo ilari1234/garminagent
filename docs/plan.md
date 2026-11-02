@@ -5,27 +5,30 @@ and evaluate training plans for off-season training and for events (half maratho
 marathon, ultra, road/gravel cycling), using historical data for planning and
 adjustment.
 
+Current status and next steps: [PROJECT_STATE.md](../PROJECT_STATE.md). Reasoning behind the
+decisions below: [decisions/](../decisions/README.md).
+
 ## Decisions
 
 | Topic | Decision |
 |---|---|
 | Language | Python 3.15, managed with `uv` (`requires-python = ">=3.15"`, `python:3.15-slim` images) |
 | Data source | **Garmin Connect Personal API** (official, own data only). No unofficial clients (python-garminconnect/garth). |
-| Users | Single user by design — Personal API terms exclude apps serving multiple end users. Schema still carries a `user_id` so it isn't a dead end. |
+| Users | Single user by design — Personal API terms exclude apps serving multiple end users. Schema still carries an `athlete_id` so it isn't a dead end. |
 | Storage | PostgreSQL (JSONB for raw payloads); activity files on a volume, S3-compatible later |
 | Runtime | Docker; local Docker Desktop now, designed to move to AWS without code changes |
 | AI model access (phase 3) | Claude on Amazon Bedrock in an EU region, data retention mode `none` — see [Data handling](#data-handling) |
-| Repo | GitHub, private (`ilari1234/garminagent`) |
+| Repo | GitHub, public (`ilari1234/garminagent`); the GHCR image stays private |
 
 ### AWS portability rules
 
 Applied from day one so "local" and "AWS" differ only by configuration:
 
-- 12-factor config: everything via environment variables (`pydantic-settings`); secrets from env or a mounted file (maps to AWS Secrets Manager / SSM).
+- 12-factor config: everything via environment variables (`pydantic-settings`), including secrets (maps to AWS Secrets Manager injected into the task environment).
 - Postgres via a standard `DATABASE_URL` (local container → RDS/Aurora).
 - File storage behind a small `BlobStore` interface: local filesystem now, S3 later.
 - Sync runs as a **one-shot command** (`garminagent sync`), not a daemon: cron/compose locally → EventBridge Scheduler + ECS Fargate task on AWS.
-- Logs as structured JSON to stdout (→ CloudWatch).
+- Logs on stderr, JSON lines with `LOG_FORMAT=json` (→ CloudWatch); command results on stdout.
 - Images built in CI and pushed to a registry (GHCR now, ECR later).
 
 ## Garmin Personal API — evaluation summary
@@ -66,6 +69,10 @@ Policy facts below were checked against Anthropic and AWS documentation on 2026-
   that is consciously decided later.
 - **No cross-region inference outside the EU**: retained data would be stored in the region
   that processes the request.
+- **To confirm in AWS stage B2** (planning session's check, 2026-11-01; see
+  [ADR 0006](../decisions/0006-model-access-and-data-handling.md)): current Sonnet and Opus models
+  may require the `eu.` profile, processing across six EU Regions rather than one, and `none` has
+  a documented exception for content flagged as suspected CSAM.
 - The direct Claude API is an acceptable fallback (commercial terms: no training; content not
   retained by default except for Covered Models with 30-day retention). Consumer Claude plans
   are never used for the app's data.
@@ -91,7 +98,8 @@ Policy facts below were checked against Anthropic and AWS documentation on 2026-
   logged and never placed in prompts. Short-lived Garmin keys; delete a key to revoke it and
   all its tokens.
 - Personal data is never committed: `.env` and `data/` are gitignored and excluded from the
-  Docker build context; Claude Code is denied reads of `.env*` in `.claude/settings.json`.
+  Docker build context; Claude Code is denied reads of `.env*` and `data/**` (except a spike
+  `report.json`, which holds structure only) in `.claude/settings.json`.
 
 ### Development
 
@@ -103,12 +111,17 @@ Policy facts below were checked against Anthropic and AWS documentation on 2026-
 
 ```
 src/garminagent/
-  config.py        settings (env / secret file)
-  garmin/          Personal API client: token manager, endpoints, retries, models
+  config.py        settings (environment)
+  garmin/          Personal API client: token manager, endpoints, retries, file validation
+  normalize.py     raw payloads -> typed records (lenient)
+  fit.py           FIT files -> samples and laps (the only user of garmin-fit-sdk)
   storage/         raw store (BlobStore + raw_payload table), normalized schema, migrations
-  sync/            backfill + incremental sync, per-dataset cursors
-  cli.py           `garminagent auth-check | sync | backfill`
+  sync.py          backfill + incremental sync, per-dataset cursors
+  runner.py        one locked, recorded run; schedule loop; status
+  cli.py           `garminagent auth-check | sync | schedule | status | ...`
 ```
+
+Interfaces between these layers: [docs/contracts/](contracts/README.md).
 
 - **Client:** `httpx`; token cached until expiry, re-requested on 401; exponential backoff on
   429/5xx honoring `Retry-After`. Returns raw JSON so the raw store keeps payloads verbatim;
@@ -117,11 +130,11 @@ src/garminagent/
 - **Two storage layers:**
   - *Raw* — every response stored verbatim (endpoint, params, fetched_at, hash) plus original
     activity files. Lets us re-parse without re-fetching.
-  - *Normalized* — activities, splits, daily summary, sleep, HRV, body battery, stress, weight,
-    plus per-second activity samples parsed from FIT files.
+  - *Normalized* — activities, daily summary (includes stress and Body Battery), sleep, HRV,
+    weight, plus per-second activity samples and laps parsed from FIT files.
 - **Sync:** per-dataset cursor table; daily datasets re-fetch a trailing window (sleep/HRV are
-  finalized late); activities via search by start date with paging; idempotent upserts; a
-  separate `backfill` command walks history in the largest chunks each endpoint allows.
+  finalized late); activities via search by start date with paging; idempotent upserts;
+  `sync --since` extends history backwards in chunks each endpoint allows.
 - **Key expiry:** the key's expiry date is configured; the app warns ahead of time and fails
   clearly on 401 from the token endpoint.
 - **Tooling:** ruff, pyright (strict), pytest (httpx `MockTransport` fakes; Postgres tests via
@@ -146,8 +159,8 @@ Security is part of each milestone's definition of done, not a later phase:
   session loads.
 - **Routine maintenance** (owner): weekly — read audit results and Dependabot PRs; monthly —
   `uv lock --upgrade` (until Dependabot supports Python 3.15) and bump the Trivy image digest;
-  every 90 days — new Garmin key, delete the old one, reread SECURITY.md. GitHub settings to
-  enable: branch protection on `main` requiring CI, Dependabot alerts and security updates.
+  every 90 days — new Garmin key, delete the old one, reread SECURITY.md. GitHub settings are
+  in place; see SECURITY.md (repository settings).
 
 ## Phase 1 milestones
 
@@ -191,12 +204,14 @@ Security is part of each milestone's definition of done, not a later phase:
 ## Later phases (outline)
 
 - **Phase 2 — Analytics:** load (TRIMP/TSS-like), CTL/ATL/TSB, zone distribution, pace/power
-  curves, recovery trends from HRV/sleep/Body Battery.
+  curves, recovery trends from HRV/sleep/Body Battery. Proposed design:
+  [ADR 0013](../decisions/0013-analytics-design.md).
 - **Phase 3 — Agents 🔒:** planner, evaluator and adjuster agents on Claude via Bedrock, with
   data exposed as tools / an MCP server over the normalized store, under the
   [data-handling](#data-handling) rules. Plans stored as versioned documents. Review: the
   OWASP LLM/Agentic mapping in SECURITY.md, safety limits as code, tool permissions,
-  prompt-injection tests.
+  prompt-injection tests. Write boundaries: [ADR 0007](../decisions/0007-agent-plan-write-boundaries.md).
 - **Phase 4 — Delivery:** UI, plan calendar, FIT workout file export to the watch.
 - **AWS deployment 🔒** (when it happens): least-privilege IAM, Secrets Manager, Bedrock
-  retention SCP, EU regions only, CloudTrail, KMS, budget alarms.
+  retention SCP, EU regions only, CloudTrail, KMS, budget alarms. Proposed design:
+  [ADR 0008](../decisions/0008-cloud-deployment.md).

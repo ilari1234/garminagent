@@ -88,7 +88,7 @@ send, or depend on.
 | Area | Decision / result |
 |---|---|
 | DB roles | Owner role runs migrations only; app role `garminagent_app` has SELECT/INSERT/UPDATE/DELETE on data tables, SELECT on `alembic_version`, nothing else. Verified by tests that run as the app role and attempt CREATE/DROP/ALTER/TRUNCATE/role creation and alembic_version writes. |
-| Credentials | Two URLs (`DATABASE_URL`, `MIGRATION_DATABASE_URL`), both `SecretStr`, passwords hidden in `config` output and never logged; Alembic gets the URL in memory, not via `alembic.ini`. Local compose passwords are local-only defaults; on AWS both come from Secrets Manager. |
+| Credentials | Two URLs (`DATABASE_URL`, `MIGRATION_DATABASE_URL`), both `SecretStr`, passwords hidden in `config` output and never logged; Alembic gets the URL in memory, not via `alembic.ini`. Compose has no default passwords: they are required from `.env` (changed after this review, when GitGuardian flagged the earlier defaults). On AWS both URLs come from Secrets Manager. |
 | Tests vs. real data | Integration tests create a throwaway database and role per run and drop them afterwards; they never touch the compose database. |
 | Raw store | Local filesystem behind a `BlobStore` interface (S3 later); content-addressed keys; 0600/0700 permissions on POSIX; atomic writes. |
 | Encryption at rest | Not implemented in code by design. Local: rely on full-disk encryption (BitLocker / FileVault / LUKS) — recommended for the developer machine. AWS: RDS and S3 with KMS. |

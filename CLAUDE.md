@@ -1,8 +1,23 @@
 # garminagent — guide for Claude Code
 
 AI-assisted training planning on the user's own Garmin Connect data. Single user by design
-(Garmin Personal API terms). Read first: [docs/plan.md](docs/plan.md) (decisions, milestones,
-data handling) and [SECURITY.md](SECURITY.md) (threat model, controls, routines).
+(Garmin Personal API terms). Read first: [PROJECT_STATE.md](PROJECT_STATE.md) (status, owners,
+next steps), [docs/plan.md](docs/plan.md) (decisions, milestones, data handling) and
+[SECURITY.md](SECURITY.md) (threat model, controls, routines). Why things are as they are:
+[decisions/](decisions/README.md). Unresolved: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Layer
+boundaries: [docs/contracts/](docs/contracts/README.md).
+
+## Working across sessions
+
+The repo is the orchestrator; no session's memory is. See
+[ADR 0012](decisions/0012-repo-as-orchestrator.md).
+
+- Any session that changes architecture, schema, contracts or conventions must add or update an
+  ADR and update `PROJECT_STATE.md` in the same change.
+- Each session works on its own git branch or worktree. Handoff happens through merges and PRs.
+- A phase is "done" only after review by a fresh session or subagent against the plan and contracts.
+- Never put secrets, tokens or Terraform state in the repo or in chat.
+- A `Proposed` ADR isn't approved: ask the user before building on it.
 
 ## Commands
 
