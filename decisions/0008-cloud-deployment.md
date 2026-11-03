@@ -1,15 +1,16 @@
 # 0008: AWS via Terraform, in stages
 
-**Status:** Direction accepted: AWS, Terraform, local until then, staged (owner, 2026-10-24 and
-2026-10-29). The design below is **proposed**: the AWS planning session produced it on 2026-11-01 and
-the owner hasn't reviewed it. Vendor facts and prices are as of that date.
+**Status:** Accepted. Direction: AWS, Terraform, local until then, staged (owner, 2026-10-24 and
+2026-10-29). Design: produced by the AWS planning session on 2026-11-01, accepted by the owner on
+2026-11-03 with the defaults below. Detail: [docs/aws-deployment.md](../docs/aws-deployment.md).
+Vendor facts and prices are as of 2026-11-01.
 
 ## Context
 
 Phase 1 runs locally by the owner's choice, built to move to AWS with configuration only. Phase 3
 needs Bedrock with an enforceable retention rule, but doesn't need the sync running in the cloud.
 
-## Decision (proposed design)
+## Decision
 
 **Stages.** One PR each; the owner runs every `apply`.
 
@@ -39,6 +40,20 @@ needs Bedrock with an enforceable retention rule, but doesn't need the sync runn
 - About $18/month in Stockholm plus Bedrock tokens; B1 and B2 alone about $1–2. Budget $25, with a
   deny action at $50.
 
+**Bedrock retention (owner, 2026-11-03).** It isn't documented whether a cross-Region `eu.` request
+follows the source Region's retention setting or the destination's. So `none` is set in **all six**
+destination Regions of the `eu.` profile from Stockholm. Milan and Spain are opt-in Regions, enabled
+in the member account only for this; the Region SCP denies everything else there. The control-plane
+and mantle retention APIs are treated as two settings: the SCP covers both and the script writes and
+reads both. No mantle projects are used. Fallback: Opus 4.8 on `bedrock-mantle` in-Region in Stockholm.
+
+**Database class.** `db.t4g.micro`, unless the orderability check or the real-data sample volume
+(OPEN_QUESTIONS 3, 8) says otherwise; then `db.t4g.small`.
+
+**Agent role.** `garminagent_agent` comes with M6f (owner, 2026-11-03); `db-bootstrap` creates it on RDS,
+taking the name from M6f's `garminagent.storage` module and the password from a third URL secret,
+`AGENT_DATABASE_URL` (+$0.40/month).
+
 ## Alternatives considered
 
 - **OpenTofu.** MPL-2.0 and built-in state encryption. Not chosen: the owner asked for Terraform,
@@ -66,4 +81,6 @@ needs Bedrock with an enforceable retention rule, but doesn't need the sync runn
   (B3c). B3a should land before M6a touches the code next to it, and B3b rebases after any open M6 PR.
 - M6f's agent role must also be created by `db-bootstrap` (ADR 0013).
 - Purged rows stay in RDS backups until they age out; SECURITY.md must state this.
-- Unverified items are in OPEN_QUESTIONS.
+- Two opt-in Regions are enabled solely to pin their retention setting; the Region SCP keeps them
+  otherwise unusable.
+- Remaining checks before implementation are in OPEN_QUESTIONS 8 and 9.

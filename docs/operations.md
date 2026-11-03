@@ -143,8 +143,9 @@ only if you want syncing to start again. Delete backups separately.
 
 ## Moving to AWS
 
-The same image and commands; only configuration and the scheduler change. See SECURITY.md
-(AWS deployment review) before going live.
+The same image and commands; only configuration and the scheduler change. The staged plan, cutover
+and rollback are in [aws-deployment.md](aws-deployment.md); see SECURITY.md (AWS deployment review)
+before going live.
 
 | Local | AWS |
 |---|---|

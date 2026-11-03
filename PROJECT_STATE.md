@@ -8,20 +8,22 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 
 ## Status
 
-Both the phase 2 and AWS plans wait on the owner's review. Nothing beyond phase 1 is committed.
+The AWS plan is accepted (2026-11-03); B0 is next. The phase 2 plan waits on the owner's review.
+No code beyond phase 1 is committed.
 
 | Work | Status | Owner session / branch | Depends on | Blocked by |
 |---|---|---|---|---|
 | Phase 1: retrieve and store (M0–M5) | **Merged, not yet "done"**: independent review pending | None active; `main` | | Fresh review; real-data check |
 | Real-data check | **Not done** | Owner's terminal | Phase 1 | Owner |
-| Phase 2: analytics (M6a–M6f) | **Planned, unapproved** ([ADR 0013](decisions/0013-analytics-design.md), revised 2026-11-03) | Plan: `local_fd1bf39d-b9af-4b7f-839f-0941182001a1`, branch `docs/phase2-plan` | Real-data check; B3a before M6a | Owner's approval (questions answered 2026-11-03) |
-| AWS B0 tooling | **Planned, unapproved** ([ADR 0008](decisions/0008-cloud-deployment.md)) | Plan: `local_3947e9f8-3400-48e0-b30a-f47d3670fd2b`, worktree branch `claude/loving-gauss-139cf4` (nothing committed; proposes `docs/aws-deployment.md`) | | Owner's review |
-| AWS B1 foundation | Planned | same | B0 | Owner applies |
-| AWS B2 Bedrock | Planned | same | B1 | Owner applies; retention question |
-| AWS B3a–d workload | Planned | same | B1; B3a before M6a, B3b after open M6 PRs | Owner applies |
+| Phase 2: analytics (M6a–M6f) | **Planned, unapproved** ([ADR 0013](decisions/0013-analytics-design.md), revised 2026-11-03) | Plan: `local_fd1bf39d-b9af-4b7f-839f-0941182001a1`; plan on `main` via #12 | Real-data check; B3a before M6a | Owner's approval (questions answered 2026-11-03) |
+| AWS plan | **Accepted** 2026-11-03 ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | AWS planning session; branch `docs/aws-deployment` | | Owner's merge |
+| AWS B0 tooling | **Next** | Track B session | Plan merged | |
+| AWS B1 foundation | Planned | Track B | B0 | Owner applies |
+| AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its verification |
+| AWS B3a–d workload | Planned | Track B | B1; B3a before M6a, B3b after open M6 PRs; B3c after the real-data check and OPEN_QUESTIONS 8 | Owner applies |
 | Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | None | Core M6, M6f, B2 | Design |
 | Phase 4: delivery | **Outline only** | None | Phase 3; hosting depends on B3 | |
-| Repo as orchestrator (this file and friends) | **Merged** ([#8](https://github.com/ilari1234/garminagent/pull/8)) | `main` | | |
+| Repo as orchestrator (this file and friends) | **Merged** (#8) | | | |
 
 Session IDs are local to the owner's desktop app. A session that can't open them should work from the
 repo alone. The planning essentials are in the two ADRs.
@@ -32,15 +34,14 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 
 ## Next steps, in order
 
-1. ~~**Owner:** merge the orchestrator PR, so sessions can see these files.~~ Done (#8).
+1. ~~**Owner:** merge the orchestrator and AWS plan PRs.~~ Done (#8, #10).
 2. **Fresh session or subagent:** review phase 1 against `docs/plan.md` and `docs/contracts/`. Record the
    result here. Only then is phase 1 "done".
 3. **Owner, own terminal:** run the real-data check (OPEN_QUESTIONS 1–3).
-4. **Owner:** review the phase 2 plan and answer its questions; tell the session to land it.
-5. **Owner:** review the AWS plan; tell the session to land it and start B0.
-6. **Track A:** M6a. **Track B:** B0, B1, B2 (B3a before M6a if the order allows).
-7. **Before phase 3 starts:** settle the design items in OPEN_QUESTIONS 10–18 and the retention question
-   in item 6.
+4. **Owner:** approve the phase 2 plan (ADR 0013; its questions are answered).
+5. **Track A:** M6a. **Track B:** B0, B1, B2 (B3a before M6a if the order allows).
+6. **Before phase 3 starts:** settle the design items in OPEN_QUESTIONS 10–18, and pass B2's retention
+   verification before any real prompt.
 
 ## What exists today
 
