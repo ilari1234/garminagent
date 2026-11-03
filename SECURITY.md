@@ -81,7 +81,7 @@ send, or depend on.
 |---|---|
 | M3 storage ✅ 2026-10-25 | DB credentials and roles, raw-store file permissions, encryption at rest, retention and deletion — results below |
 | Phase 3 agents | Walk the OWASP LLM and Agentic tables above; safety limits as code; tool permissions; prompt-injection tests |
-| AWS deployment | Least-privilege IAM, Secrets Manager, Bedrock retention SCP, EU regions only, CloudTrail, KMS, budget alarms |
+| AWS deployment | Least-privilege IAM, Secrets Manager, Bedrock retention SCP, EU regions only, CloudTrail, KMS, budget alarms. Per-stage items: [docs/aws-deployment.md](docs/aws-deployment.md#security-review-per-stage) |
 
 ### M3 storage review (2026-10-25)
 
