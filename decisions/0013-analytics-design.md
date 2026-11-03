@@ -1,10 +1,8 @@
 # 0013: Phase 2 metric definitions and storage
 
-**Status:** Proposed. The phase 2 planning session produced this on 2026-10-29 and revised it on
-2026-11-03 after the orchestrator change (#8): a recompute rule that respects storage invariant 4,
-explicit grants, ordering against the AWS track, the acute:chronic position, and prerequisites. The
-owner answered its four questions on 2026-11-03 (below) but hasn't approved the record as a whole
-(OPEN_QUESTIONS 4). Nothing is built.
+**Status:** Accepted (owner's decision, 2026-11-03). The phase 2 planning session produced this on
+2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
+the owner's answers are recorded below. Nothing is built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -23,7 +21,7 @@ The planning session found three facts in the code and spec that shape the desig
 The phase 1 retro adds two constraints: upserts rewrite `updated_at` on recent rows every run
 (storage contract, invariant 4), and `activity.sport` holds Garmin's unmapped type keys.
 
-## Decision (proposed)
+## Decision
 
 **Milestones, one PR each:**
 
@@ -43,7 +41,8 @@ M6c, M6d and M6e depend only on M6a and M6b and can be reviewed in any order.
 - The owner's real-data check comes before M6a merges (first run done 2026-11-03): M6a's `renormalize` and
   the first `analyze --check` are its natural next run (ADR 0009).
 - B3a (`make_blob_store`) lands before M6a touches the code next to it; B3b rebases after any open
-  M6 PR (ADR 0008).
+  M6 PR (ADR 0008). B3a is a code-only seam with no AWS resources, so it may land before B1
+  (owner's decision, 2026-11-03) and doesn't hold M6a behind the AWS apply.
 
 **Storage:** plain tables written from Python; plain views for read-only rollups. Each migration
 grants the app role explicitly on its new tables and extends `tests/storage/test_privileges.py` and
