@@ -66,7 +66,7 @@ privileges.
   up to 10 s (smart recording) hold about 98 % of recorded time and stop sharply after 10 s, while
   longer gaps are rare pauses. The first proposal, 5 s, would have treated about a third of
   recorded time as paused.
-- **Sport groups** from Garmin's type keys: run (`running`), ride (`cycling`, `gravel_cycling`,
+- **Sport groups** from Garmin's type keys: run (`running`, `trail_running`), ride (`cycling`, `gravel_cycling`,
   `road_biking`, `mountain_biking`), ski (`skate_skiing_ws`, `cross_country_skiing_ws`), strength
   (`strength_training`), and other for any key not yet mapped (counted, so new keys get noticed).
   Every group counts toward fitness and fatigue; loads are also reported per group.
