@@ -23,3 +23,6 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Garmin's Personal API spec: keep a local copy here if useful; not redistributed (ADR 0014)
+docs/garmin-personal-api/openapi.json

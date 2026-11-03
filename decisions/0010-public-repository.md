@@ -1,6 +1,7 @@
 # 0010: Public repository
 
 **Status:** Accepted (owner's decision, 2026-10-25). Replaces the "private" line in the first plan.
+Amended by ADR 0014: the Garmin OpenAPI spec was removed from the tree (it stays in history).
 
 ## Context
 

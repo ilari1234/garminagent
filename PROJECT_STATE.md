@@ -48,7 +48,9 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 - **Schema:** migrations 0001–0005. Next is 0006, owned by track A.
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
 - **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR, CodeQL.
-- **Merged PRs:** #2–#7. Dependabot's #1 was closed.
+- **Merged PRs:** #2–#8. Dependabot's #1 was closed.
+- **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
+  `docs/garmin-personal-api/openapi.json`.
 
 ## Where to find things
 

@@ -89,9 +89,6 @@ ADR 0007 sets principles only.
 
 ## Legal and licensing
 
-21. **Garmin OpenAPI spec in a public repo (owner).** `docs/garmin-personal-api/openapi.json` was
-    left in history by choice. The right to redistribute it wasn't verified. Options: check the
-    terms, or remove it from the tree (history stays).
 22. **Repo license (owner).** None exists, so default copyright applies. Any choice must not be
     copyleft (ADR 0004).
 23. **FIT license safety clause (owner).** Judged low risk for advisory, owner-approved plans. Revisit
