@@ -31,6 +31,9 @@ This repo is public: report findings as structure and counts, never real values.
 3. **Sample volume.** Rows and bytes of `activity_sample` on real data decide if Postgres stays
    adequate (ADR 0003) and whether `db.t4g.micro` suffices (ADR 0008). Report counts only.
 
+For 1–3, run `scripts/real_data_check.py` after a full sync (docs/operations.md, real-data check):
+one JSON object with counts, sizes and key names only, which the owner can share with a session.
+
 ## Awaiting owner review of plans
 
 4. **Approve or change the phase 2 plan** (ADR 0013), in session
