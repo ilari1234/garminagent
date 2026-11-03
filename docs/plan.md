@@ -202,11 +202,36 @@ Security is part of each milestone's definition of done, not a later phase:
   via `--max-age-hours`); [operations.md](operations.md) covers setup, scheduling, monitoring,
   key rotation, upgrades, backups, deletion, AWS mapping and troubleshooting; migration 0005.
 
+## Phase 2 milestones (proposed)
+
+Unapproved: formulas, storage, recompute rules and alternatives are in
+[ADR 0013](../decisions/0013-analytics-design.md); the owner's questions are OPEN_QUESTIONS 4.
+Analytics reads normalized tables only (plus `raw_payload` for `renormalize`), writes plain
+tables from Python, never fails the sync, and logs counts only. Before M6a merges: the owner's
+real-data check, and B3a from the AWS track.
+
+- **M6a — Thresholds:** `hr_zones` dataset (one request per day) kept as history; threshold
+  columns on `activity`, filled from stored raw payloads by `garminagent renormalize`; an
+  `athlete_threshold` timeline (manual, then Garmin zones, then activity values) with
+  `garminagent thresholds set|list`; sport grouping; an `analyze` step after FIT parsing and
+  `garminagent analyze`; migration 0006.
+- **M6b — Per-activity metrics:** `activity_metrics` with weighted power, power load, HR load,
+  the chosen load and its method, time in HR zones and power levels, efficiency factor,
+  decoupling and coverage; one gap rule for pauses; recompute by input fingerprint, capped per
+  run; HR load only once the required `ANALYTICS_TRIMP_B` (1.92 or 1.67, no default) is set;
+  running load is HR-only in phase 2; migration 0007.
+- **M6c — Fitness, fatigue, form:** `daily_load` per day and sport group with 42/7-day
+  exponential averages, form and ramp; weekly view; migration 0008.
+- **M6d — Best efforts:** `activity_best_effort` for power (5 s–5 h) and distance (400 m–marathon);
+  curves and PBs as SQL; migration 0009.
+- **M6e — Recovery trends:** `daily_recovery` with HRV and resting HR against 60-day baselines,
+  sleep, Body Battery and stress trends, Garmin's status alongside; no weight; migration 0010.
+- **M6f — Agent read layer:** `agent` schema of allowlisted views, `garminagent_agent` role with
+  SELECT on that schema only, typed bounded queries without Garmin IDs, `analyze --check`
+  (counts within tolerance against Garmin's own values) and `report`; migration 0011.
+
 ## Later phases (outline)
 
-- **Phase 2 — Analytics:** load (TRIMP/TSS-like), CTL/ATL/TSB, zone distribution, pace/power
-  curves, recovery trends from HRV/sleep/Body Battery. Proposed design:
-  [ADR 0013](../decisions/0013-analytics-design.md).
 - **Phase 3 — Agents 🔒:** planner, evaluator and adjuster agents on Claude via Bedrock, with
   data exposed as tools / an MCP server over the normalized store, under the
   [data-handling](#data-handling) rules. Plans stored as versioned documents. Review: the
