@@ -13,8 +13,8 @@ See [PROJECT_STATE.md](PROJECT_STATE.md) for where the project stands,
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/) 0.13.5 exactly (pinned by `required-version` in `pyproject.toml`;
-  `uv self update 0.13.5`). uv installs Python 3.15 itself.
+- [uv](https://docs.astral.sh/uv/) 0.13.6 exactly (pinned by `required-version` in `pyproject.toml`;
+  `uv self update 0.13.6`). uv installs Python 3.15 itself.
 - Docker with Compose v2
 
 ## Setup

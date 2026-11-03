@@ -22,7 +22,7 @@ The repo is the orchestrator; no session's memory is. See
 ## Commands
 
 ```bash
-uv sync                      # uv 0.13.5 exactly (required-version); Python 3.15
+uv sync                      # uv 0.13.6 exactly (required-version); Python 3.15
 uv run ruff check && uv run ruff format --check
 uv run pyright               # strict
 uv run pytest                # Postgres tests need TEST_DATABASE_URL
