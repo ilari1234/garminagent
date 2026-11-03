@@ -1,6 +1,6 @@
 # Open questions
 
-Everything unresolved or deferred, as of 2026-11-01. Each item has enough context to pick up cold.
+Everything unresolved or deferred, as of 2026-11-03. Each item has enough context to pick up cold.
 **Owner** means only the project owner can answer or do it. Remove an item when it's settled, and
 record the answer in an ADR if it's a decision.
 
@@ -40,25 +40,23 @@ This repo is public: report findings as structure and counts, never real values.
    - Create the agent database role in M6f, or wait for phase 3?
    - Is HR-only running load acceptable for phase 2?
    - M6a's `renormalize` + `analyze --check` is the first real-data run; can the weight check join it?
-5. **Approve or change the AWS plan** (ADR 0008), in session
-   `local_3947e9f8-3400-48e0-b30a-f47d3670fd2b`. Defaults unless the owner objects: `eu-north-1`,
-   Terraform, re-sync migration, the listed exceptions to "only `infra/`".
 
-## AWS facts not yet verified
+The AWS plan was accepted on 2026-11-03 (ADR 0008, [docs/aws-deployment.md](docs/aws-deployment.md)).
+Its retention question (cross-Region scope, control plane vs mantle) was settled by setting `none` in
+all six `eu.` destination Regions on both APIs.
+
+## AWS checks before implementation
 
 Reported by the AWS planning session, 2026-11-01. Recheck; vendor facts change.
 
-6. **Which Region's retention setting governs an `eu.` cross-Region request?** Docs say "the Region
-   where you set it" but don't address routing. Plan: set `none` in the source Region and the
-   default-enabled destinations and test, which doesn't prove behavior in opt-in Regions (Milan,
-   Spain). Stricter option: Opus 4.8 on `bedrock-mantle` in-Region in Stockholm, an older model.
-   **Blocks sending any real prompt** under ADR 0006 until the owner accepts an answer.
-7. **Are the control-plane and mantle retention settings one value?** Undocumented; the script
-   writes and reads both.
-8. **Is `db.t4g.micro` orderable for PostgreSQL 18 in the Region?** Check before B3c.
-9. **Smaller checks at implementation:** the OIDC subject format on the first run (this repo uses the
-   newer format with IDs); the action name for denying long-lived Bedrock API keys; whether
-   `id-token` is blocked on fork PRs; TFLint's AWS ruleset can be pinned; prices.
+8. **Is `db.t4g.micro` orderable for PostgreSQL 18 in `eu-north-1`?** Owner runs
+   `aws rds describe-orderable-db-instance-options` before B3c. Decided together with item 3; the
+   fallback is `db.t4g.small`.
+9. **Smaller checks at implementation:** the OIDC subject (this repo uses the newer format with IDs;
+   confirm from GitHub's API before B3c, not from token claims in public logs); the action and
+   condition for denying long-lived Bedrock API keys (B2); whether `id-token` is blocked on fork PRs
+   (low priority: the environment rule covers it); whether TFLint's AWS ruleset can be pinned (B0,
+   otherwise core rules only); prices (B3c).
 
 ## Phase 3 design (not started)
 
