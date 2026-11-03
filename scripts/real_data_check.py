@@ -8,6 +8,10 @@ Answers OPEN_QUESTIONS 1-3 on the owner's own database:
    the stored weigh-ins fall into, and whether the result is plausible.
 3. How large `activity_sample` is, in rows and bytes.
 
+Follow-ups from the first real run: which keys the raw sleep payloads carry (sleep average HR
+was never stored), how far apart consecutive samples are (for phase 2's gap rule), and per-sport
+coverage of laps, HR and power.
+
 Prints one JSON object on stdout: counts, byte sizes, day counts and Garmin's key names only. No
 measured value, date, ID or free text, so the output can be shared with a development session.
 Read-only; makes no Garmin requests.
@@ -42,9 +46,24 @@ from garminagent.storage.models import (
     SyncRun,
     WeightDaily,
 )
-from garminagent.sync import WEIGHT
+from garminagent.sync import SLEEP, WEIGHT
 
 RECENT_RUNS = 10
+# Key paths are reported two levels deep (`sleepScores.overall`), capped in number in case a
+# payload uses data as keys.
+KEY_DEPTH = 2
+MAX_KEYS = 300
+# Seconds between consecutive samples of one activity: (label, low, high), inclusive.
+GAP_BUCKETS = (
+    ("1", 1, 1),
+    ("2", 2, 2),
+    ("3", 3, 3),
+    ("4-5", 4, 5),
+    ("6-10", 6, 10),
+    ("11-30", 11, 30),
+    ("31-120", 31, 120),
+    ("over_120", 121, None),
+)
 # Mirrors normalize._kilograms: values from 1000 up are taken as grams; 20-300 kg is plausible.
 GRAMS_FROM = 1000
 PLAUSIBLE_KG = (20.0, 300.0)
@@ -207,6 +226,82 @@ def weight_section(session: Session) -> dict[str, Any]:
     }
 
 
+def _key_paths(obj: dict[str, object], prefix: str, depth: int, counts: Counter[str]) -> None:
+    for key, value in obj.items():
+        path = f"{prefix}{key}"
+        counts[path] += value is not None  # a key that is present but always null shows as 0
+        if depth > 1 and isinstance(value, dict):  # nested objects only; lists aren't walked
+            _key_paths(cast(dict[str, object], value), f"{path}.", depth - 1, counts)
+
+
+def sleep_keys_section(session: Session) -> dict[str, Any]:
+    """Non-null counts per key path in the newest revision of each raw sleep response."""
+    rows = session.execute(
+        select(RawPayload.request_key, RawPayload.payload)
+        .where(RawPayload.endpoint == SLEEP)
+        .order_by(RawPayload.request_key, RawPayload.last_fetched_at.desc())
+    ).all()
+    latest_per_request: dict[str, object] = {}
+    for key, payload in rows:
+        latest_per_request.setdefault(key, payload)
+    counts: Counter[str] = Counter()
+    nights = 0
+    for payload in latest_per_request.values():
+        for night in _objects(payload):
+            nights += 1
+            _key_paths(night, "", KEY_DEPTH, counts)
+    paths = sorted(counts)
+    return {
+        "nights": nights,
+        "key_paths_total": len(paths),
+        "non_null_by_key": {path: counts[path] for path in paths[:MAX_KEYS]},
+    }
+
+
+def gaps_section(session: Session) -> dict[str, Any]:
+    """How far apart consecutive samples are, as counts and total seconds per bucket."""
+    gap = (
+        ActivitySample.elapsed_s
+        - func.lag(ActivitySample.elapsed_s).over(
+            partition_by=(ActivitySample.athlete_id, ActivitySample.activity_id), order_by=ActivitySample.elapsed_s
+        )
+    ).label("gap")
+    gaps = select(gap).subquery()
+    rows = session.execute(select(gaps.c.gap, func.count()).where(gaps.c.gap.is_not(None)).group_by(gaps.c.gap)).all()
+    buckets = {label: {"count": 0, "seconds": 0} for label, _, _ in GAP_BUCKETS}
+    for seconds, n in rows:
+        for label, low, high in GAP_BUCKETS:
+            if seconds >= low and (high is None or seconds <= high):
+                buckets[label]["count"] += n
+                buckets[label]["seconds"] += seconds * n
+                break
+    return buckets
+
+
+def by_sport_section(session: Session) -> dict[str, Any]:
+    """Per Garmin activity type: activities, and how many have laps, HR samples and power samples."""
+
+    def activities_with(model: Any, *where: Any) -> Any:
+        return select(model.activity_id).where(*where).distinct()
+
+    laps = activities_with(ActivityLap)
+    hr = activities_with(ActivitySample, ActivitySample.heart_rate.is_not(None))
+    power = activities_with(ActivitySample, ActivitySample.power_w.is_not(None))
+    rows = session.execute(
+        select(
+            Activity.sport,
+            func.count(),
+            func.count().filter(Activity.activity_id.in_(laps)),
+            func.count().filter(Activity.activity_id.in_(hr)),
+            func.count().filter(Activity.activity_id.in_(power)),
+        ).group_by(Activity.sport)
+    ).all()
+    return {
+        str(sport or "unknown"): {"activities": n, "with_laps": n_laps, "with_hr": n_hr, "with_power": n_power}
+        for sport, n, n_laps, n_hr, n_power in sorted(rows, key=lambda r: (-r[1], str(r[0])))
+    }
+
+
 def samples_section(session: Session) -> dict[str, Any]:
     per_activity = (
         select(ActivitySample.activity_id, func.count().label("n")).group_by(ActivitySample.activity_id).subquery()
@@ -248,6 +343,9 @@ def collect(session: Session, today: date | None = None) -> dict[str, Any]:
         "wellness": wellness_section(session),
         "weight_units": weight_section(session),
         "samples": samples_section(session),
+        "sleep_keys": sleep_keys_section(session),
+        "sample_gaps_s": gaps_section(session),
+        "by_sport": by_sport_section(session),
     }
 
 

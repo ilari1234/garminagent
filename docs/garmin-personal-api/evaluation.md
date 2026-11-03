@@ -100,3 +100,21 @@ Treat documented limits as the contract; don't rely on leniency.
 - Contents of the activity zip (expected: one `.fit`).
 - Actual rate limit; whether a long backfill triggers throttling.
 - JWT `exp` value vs. documented 24 h.
+
+## Real-data check (2026-11-03)
+
+The owner ran `scripts/real_data_check.py` on their own database after a full sync. It reports
+counts, sizes and key names only; this summary keeps to ratios and rough sizes.
+
+- **Sync:** one complete run; daily summaries, sleep, HRV, weight and activities each cover the
+  full two-year range and are current.
+- **Activity files:** every activity's file was stored, and every FIT file parsed with parser
+  version 1; none were invalid. Every activity has samples; most, but not all, have laps.
+- **Wellness:** daily summaries are complete; sleep and HRV are present for almost every night.
+  Sleep average HR is empty for every night (OPEN_QUESTIONS 33). Body fat is empty for every
+  weigh-in, most likely because the scale doesn't measure it.
+- **Weight unit:** every weigh-in arrives in **grams** and converts to a plausible weight, so the
+  spec's "kilograms" is wrong for this endpoint and `normalize._kilograms` is right.
+- **Samples:** HR is in almost every row, speed and altitude in about nine rows of ten, cadence in
+  about four of ten, power in about one of seven. `activity_sample` takes about 95 MB for two years
+  and the whole database about 107 MB, so Postgres needs no downsampling or Parquet.

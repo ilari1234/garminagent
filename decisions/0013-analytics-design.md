@@ -40,7 +40,7 @@ M6c, M6d and M6e depend only on M6a and M6b and can be reviewed in any order.
 
 **Prerequisites and order:**
 
-- The owner's real-data check (OPEN_QUESTIONS 1–3) comes before M6a merges: M6a's `renormalize` and
+- The owner's real-data check comes before M6a merges (first run done 2026-11-03): M6a's `renormalize` and
   the first `analyze --check` are its natural next run (ADR 0009).
 - B3a (`make_blob_store`) lands before M6a touches the code next to it; B3b rebases after any open
   M6 PR (ADR 0008).
@@ -60,7 +60,7 @@ privileges.
 - **Daily series** (`daily_load`, `daily_recovery`) recompute fully each run (about 730 rows a year).
 - **Days** come from `start_time_local`, falling back to UTC; an activity crossing midnight counts on
   its start day.
-- **Gaps:** a sample covers time until the next one, up to `MAX_GAP_S` (5 s). A longer gap is a pause:
+- **Gaps:** a sample covers time until the next one, up to `MAX_GAP_S` (5 s until the real-data gap histogram sets it, OPEN_QUESTIONS 34). A longer gap is a pause:
   it counts toward no total and breaks rolling windows.
 - **Analytics failures never fail the sync**; counts only go to `sync_run.counts["analytics"]`.
 
