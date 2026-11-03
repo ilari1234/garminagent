@@ -44,7 +44,8 @@ Weight isn't exposed.
 ## Model boundary: tools to Bedrock
 
 **Required:** Bedrock in the EU with retention `none` verified before any prompt, global inference
-denied. Credentials never in prompts. **Open:** Region scope of retention (OPEN_QUESTIONS 6); framework,
+denied, `none` set in all six `eu.` destination Regions (ADR 0008). Credentials never in prompts.
+**Open:** framework,
 transport and model per agent.
 
 ## Write boundary: agents to plans

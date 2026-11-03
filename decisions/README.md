@@ -27,7 +27,7 @@ Where the owner's reason wasn't stated, the record says so instead of inventing 
 | [0005](0005-language-and-tooling.md) | Python 3.15, uv, httpx, strict typing | Accepted |
 | [0006](0006-model-access-and-data-handling.md) | Bedrock in the EU, retention `none`, derived metrics only | Accepted; one wording correction pending |
 | [0007](0007-agent-plan-write-boundaries.md) | How agents may create or change plans | Principles accepted; design open |
-| [0008](0008-cloud-deployment.md) | AWS via Terraform, staged B0–B3 | Direction accepted; design proposed |
+| [0008](0008-cloud-deployment.md) | AWS via Terraform, staged B0–B3 | Accepted |
 | [0009](0009-phases-and-boundaries.md) | Phases, tracks and what each may depend on | Accepted |
 | [0010](0010-public-repository.md) | Public repository and what stayed in history | Accepted |
 | [0011](0011-supply-chain-controls.md) | Pinning, scanners and cooldown | Accepted |
