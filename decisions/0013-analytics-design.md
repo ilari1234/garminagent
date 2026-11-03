@@ -60,8 +60,16 @@ privileges.
 - **Daily series** (`daily_load`, `daily_recovery`) recompute fully each run (about 730 rows a year).
 - **Days** come from `start_time_local`, falling back to UTC; an activity crossing midnight counts on
   its start day.
-- **Gaps:** a sample covers time until the next one, up to `MAX_GAP_S` (5 s until the real-data gap histogram sets it, OPEN_QUESTIONS 34). A longer gap is a pause:
-  it counts toward no total and breaks rolling windows.
+- **Gaps:** a sample covers time until the next one, up to `MAX_GAP_S` = **10 s**; within that, its
+  values carry forward to 1 s resolution before rolling windows. A longer gap is a pause: it counts
+  toward no total and breaks rolling windows. Set from the real-data histogram (2026-11-03): gaps of
+  up to 10 s (smart recording) hold about 98 % of recorded time and stop sharply after 10 s, while
+  longer gaps are rare pauses. The first proposal, 5 s, would have treated about a third of
+  recorded time as paused.
+- **Sport groups** from Garmin's type keys: run (`running`), ride (`cycling`, `gravel_cycling`,
+  `road_biking`, `mountain_biking`), ski (`skate_skiing_ws`, `cross_country_skiing_ws`), strength
+  (`strength_training`), and other for any key not yet mapped (counted, so new keys get noticed).
+  Every group counts toward fitness and fatigue; loads are also reported per group.
 - **Analytics failures never fail the sync**; counts only go to `sync_run.counts["analytics"]`.
 
 **Metrics** (neutral names, since Normalized Power, Intensity Factor and TSS are Peaksware trademarks):
@@ -75,7 +83,7 @@ privileges.
 | Fitness, fatigue, form | `CTL_t = CTL_{t-1} + (L_t − CTL_{t-1})/42`, ATL the same with 7; form = previous day's CTL − ATL |
 | Zones | Garmin's per-sport HR floors valid on the date; Coggan's 7 power levels (% of FTP); a 3-zone split |
 | Decoupling | `1 − EF₂/EF₁`, EF = speed or power ÷ HR, halves by moving time, steady sessions ≥60 min, first 10 min excluded |
-| Best efforts | Max rolling mean power per window (5 s–5 h); shortest time per distance (400 m–marathon) |
+| Best efforts | Shortest time per distance (400 m–marathon) for run and ride first; max rolling mean power per window (5 s–5 h) where power exists |
 | Recovery | 7-day mean of ln(HRV) against a 60-day baseline ±0.5 SD, resting HR the same way; flags are trends, not diagnoses. Weight excluded |
 
 **Traceability:** each metrics row records the thresholds and `algo_version` it used. Threshold
@@ -99,6 +107,8 @@ precedence: manual, then Garmin zones, then activity values; a value holds until
   `AGENT_DATABASE_URL`, handled like the other two: `SecretStr`, password hidden in `config` output,
   never logged; on AWS a third Secrets Manager secret from which `db-bootstrap` reads the password.
 - **Running load is HR-only in phase 2.**
+- **Strength sessions count toward fitness and fatigue**, as their own sport group so their share
+  stays visible; their HR load understates muscular strain.
 - **The weight-unit check runs with the real-data check** (`scripts/real_data_check.py`), before M6a's
   first `renormalize` and `analyze --check`.
 
@@ -118,6 +128,11 @@ precedence: manual, then Garmin zones, then activity values; a value holds until
 
 ## Consequences
 
+- On real data (2026-11-03) every activity has HR, but power exists only in most ski sessions and in
+  no ride, and Garmin's FTP is a cycling value. HR load is therefore the load for practically every
+  activity, so `ANALYTICS_TRIMP_B` must be set before M6b's results mean anything. Power load,
+  weighted power and power levels stay small in M6b, ready for a power meter, but currently apply
+  to no activity.
 - HR load under-scores short hard intervals, because HR responds slowly. Agents must not read it as
   equal to power load for such sessions.
 - Fitness needs about 126 days (3×42) of history to be meaningful; rows record when it is reliable.

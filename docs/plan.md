@@ -217,7 +217,7 @@ real-data check, and B3a from the AWS track.
   `garminagent analyze`; migration 0006.
 - **M6b — Per-activity metrics:** `activity_metrics` with weighted power, power load, HR load,
   the chosen load and its method, time in HR zones and power levels, efficiency factor,
-  decoupling and coverage; one gap rule for pauses; recompute by input fingerprint, capped per
+  decoupling and coverage; one gap rule for pauses (gaps over 10 s); recompute by input fingerprint, capped per
   run; HR load only once the required `ANALYTICS_TRIMP_B` (1.92 or 1.67, no default) is set;
   running load is HR-only in phase 2; migration 0007.
 - **M6c — Fitness, fatigue, form:** `daily_load` per day and sport group with 42/7-day
