@@ -87,6 +87,18 @@ missed intervals) or the last run failed (`auth_failed`, `garmin_error`, `databa
 A dataset that answers 4xx (e.g. a feature your account doesn't have) is skipped for that run
 and shows up as `"errors"` in its counts; the other datasets continue.
 
+### Real-data check
+
+`scripts/real_data_check.py` reports what sync stored as counts, byte sizes, day counts and
+Garmin's key names: runs and synced ranges, file and parse outcomes, rows per table, which unit
+weigh-ins arrive in, and the size of `activity_sample`. It prints no measured values, dates or
+IDs, so its output can be shared with a development session. Read-only, no Garmin requests. The
+script isn't in the image; mount it into the app container (use the repository's absolute path):
+
+```bash
+docker compose run --rm --no-deps --entrypoint python -v "$PWD/scripts:/scripts:ro" app /scripts/real_data_check.py
+```
+
 ## Key rotation (every 90 days)
 
 1. Garmin Connect web → Personal API Key → create a new key.

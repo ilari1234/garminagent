@@ -31,6 +31,9 @@ This repo is public: report findings as structure and counts, never real values.
 3. **Sample volume.** Rows and bytes of `activity_sample` on real data decide if Postgres stays
    adequate (ADR 0003) and whether `db.t4g.micro` suffices (ADR 0008). Report counts only.
 
+For 1–3, run `scripts/real_data_check.py` after a full sync (docs/operations.md, real-data check):
+one JSON object with counts, sizes and key names only, which the owner can share with a session.
+
 ## Awaiting owner review of plans
 
 4. **Approve or change the phase 2 plan** (ADR 0013), in session
@@ -87,9 +90,6 @@ ADR 0007 sets principles only.
 
 ## Legal and licensing
 
-21. **Garmin OpenAPI spec in a public repo (owner).** `docs/garmin-personal-api/openapi.json` was
-    left in history by choice. The right to redistribute it wasn't verified. Options: check the
-    terms, or remove it from the tree (history stays).
 22. **Repo license (owner).** None exists, so default copyright applies. Any choice must not be
     copyleft (ADR 0004).
 23. **FIT license safety clause (owner).** Judged low risk for advisory, owner-approved plans. Revisit
