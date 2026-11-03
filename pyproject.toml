@@ -43,7 +43,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "S"]
 "tests/**" = ["S101", "S105", "S106"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "scripts"]
 pythonVersion = "3.15"
 typeCheckingMode = "strict"
 
