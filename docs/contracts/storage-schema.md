@@ -60,5 +60,5 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 
 ## Local and AWS
 
-Local: Postgres 18 in compose, blobs in the `appdata` volume. AWS (proposed, ADR 0008): RDS with
+Local: Postgres 18 in compose, blobs in the `appdata` volume. AWS (accepted, ADR 0008; not built): RDS with
 `sslmode=verify-full`, S3 with SSE-KMS and no versioning. Same schema and code paths.

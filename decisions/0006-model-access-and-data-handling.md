@@ -34,7 +34,9 @@ The full rules are in [docs/plan.md, Data handling](../docs/plan.md#data-handlin
   the `eu.` inference profile can process in six EU Regions. All are in the EU, but "in an EU
   region" means "within the EU" rather than one Region. Also, `none` has a documented exception:
   Bedrock may store and review content flagged as suspected CSAM. See ADR 0008.
-- **Open:** which Region's retention setting governs a cross-Region `eu.` request (OPEN_QUESTIONS).
+- **Settled (owner, 2026-11-03):** which Region's retention setting governs a cross-Region `eu.`
+  request isn't documented, so `none` is set in all six destination Regions (ADR 0008). No real
+  prompt is sent until B2's verification has passed.
 - The SCP needs a member account, because SCPs don't apply to the management account (ADR 0008).
 - Phase 3 needs an agent read layer that makes this enforceable, not just a convention
   ([agent layer contract](../docs/contracts/agent-layer.md)).
