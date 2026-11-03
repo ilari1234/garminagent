@@ -14,25 +14,18 @@ This repo is public: report findings as structure and counts, never real values.
 |---|---|---|
 | Key and token flow, all M0 endpoints | **Confirmed** on real data, 2026-10-24 | [evaluation.md](docs/garmin-personal-api/evaluation.md) |
 | `sync` with daily summaries, activities and file download | **Confirmed**: a real run was seen working, 2026-10-28 | Owner's log output in the planning session; not recorded in the repo |
-| A complete backfill to the end | **Unknown**: the last output seen was mid-run | |
-| FIT parsing on real files | **Not confirmed**: tests are synthetic | |
-| Sleep, HRV and weight sync on real data | **Not confirmed**: M4c tests are synthetic | |
+| A complete backfill to the end | **Confirmed** 2026-11-03: two years, every dataset current | Real-data check |
+| FIT parsing on real files | **Confirmed** 2026-11-03: every stored FIT file parsed, none invalid | Real-data check |
+| Sleep, HRV and weight sync on real data | **Confirmed** 2026-11-03, except sleep average HR (item 33) | Real-data check |
 | Local scheduler over days | **Not confirmed** | |
 | Garmin's rate limits | **Unknown**: no headers and no throttling at 1 req/s; a long run hasn't been judged | |
 | Personal API terms for this use | **Assumed from the docs**: single-user, own data. No legal review | |
 
-1. **Real-data check (owner, in own terminal; blocks trusting M6).** Run a full sync, then
-   `status`, and report counts: complete or not, pending files, parse failures. Claude must not run
-   this and must not read `data/`.
-2. **Weight units (owner plus a structure-only check).** The spec says kilograms, but Garmin's web
-   APIs have used grams, so `normalize.py` treats values of 1000 or more as grams. No real weigh-in
-   has confirmed this. Check with a script reporting which branch applied, not values, in the owner's
-   terminal. M6e excludes weight until then.
-3. **Sample volume.** Rows and bytes of `activity_sample` on real data decide if Postgres stays
-   adequate (ADR 0003) and whether `db.t4g.micro` suffices (ADR 0008). Report counts only.
-
-For 1–3, run `scripts/real_data_check.py` after a full sync (docs/operations.md, real-data check):
-one JSON object with counts, sizes and key names only, which the owner can share with a session.
+The real-data check ran on 2026-11-03 (`scripts/real_data_check.py`; summary in
+[evaluation.md](docs/garmin-personal-api/evaluation.md#real-data-check-2026-11-03)) and settled the
+former items 1–3: sync is complete and current for every dataset, every activity file was stored and
+its FIT file parsed, weight arrives in **grams** (the normalizer's conversion is right), and
+`activity_sample` is small enough that Postgres and `db.t4g.micro` are fine. It raised items 33 and 34.
 
 ## Awaiting owner review of plans
 
@@ -107,10 +100,18 @@ ADR 0007 sets principles only.
 
 28. **`activity_file` retries:** `unavailable` and `invalid` are never retried. No command exists to
     force a retry.
-29. **Parquet or downsampling** for samples: only if item 3 says so.
 30. **Grade-adjusted pace** for running load: pending a check of Minetti's coefficients against the
     paper (ADR 0013).
 31. **HRV smallest worthwhile change:** ±0.5 SD is convention; the AIS guide's formula wasn't confirmed
     because its PDF couldn't be opened (ADR 0013).
 32. **The scheduler health check** relies on `status --max-age-hours 13`. Whether it's noisy in
     practice is unknown.
+33. **Sleep average HR is never stored.** On real data `sleep_summary.avg_hr` is empty for every
+    night, while duration and score arrive. `normalize.parse_sleep` reads `avgHeartRate` (the spec's
+    name); the real payload probably uses another key or omits it. The check script now reports
+    non-null counts per sleep key path: rerun it, then fix the mapping (a key that is present but
+    always null shows as 0, an absent key isn't listed).
+34. **Sample gap rule for M6b.** FIT smart recording stores far fewer rows than seconds, and
+    `elapsed_s` gaps also include pauses. ADR 0013's `MAX_GAP_S` (5 s) must be set from the check's
+    gap histogram (`sample_gaps_s`, counts and seconds per bucket) before M6b. The same run reports
+    laps, HR and power coverage per sport (some activities have no laps).
