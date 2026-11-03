@@ -25,7 +25,10 @@ The real-data check ran on 2026-11-03 (`scripts/real_data_check.py`; summary in
 [evaluation.md](docs/garmin-personal-api/evaluation.md#real-data-check-2026-11-03)) and settled the
 former items 1–3: sync is complete and current for every dataset, every activity file was stored and
 its FIT file parsed, weight arrives in **grams** (the normalizer's conversion is right), and
-`activity_sample` is small enough that Postgres and `db.t4g.micro` are fine. It raised items 33 and 34.
+`activity_sample` is small enough that Postgres and `db.t4g.micro` are fine. A second run settled
+its follow-ups: Garmin's sleep summaries carry `avgHeartRate` but always null (and no other sleep HR
+key), so sleep average HR isn't available from this endpoint; and sample gaps set ADR 0013's gap
+rule to 10 s.
 
 ## Awaiting owner review of plans
 
@@ -106,12 +109,3 @@ ADR 0007 sets principles only.
     because its PDF couldn't be opened (ADR 0013).
 32. **The scheduler health check** relies on `status --max-age-hours 13`. Whether it's noisy in
     practice is unknown.
-33. **Sleep average HR is never stored.** On real data `sleep_summary.avg_hr` is empty for every
-    night, while duration and score arrive. `normalize.parse_sleep` reads `avgHeartRate` (the spec's
-    name); the real payload probably uses another key or omits it. The check script now reports
-    non-null counts per sleep key path: rerun it, then fix the mapping (a key that is present but
-    always null shows as 0, an absent key isn't listed).
-34. **Sample gap rule for M6b.** FIT smart recording stores far fewer rows than seconds, and
-    `elapsed_s` gaps also include pauses. ADR 0013's `MAX_GAP_S` (5 s) must be set from the check's
-    gap histogram (`sample_gaps_s`, counts and seconds per bucket) before M6b. The same run reports
-    laps, HR and power coverage per sport (some activities have no laps).

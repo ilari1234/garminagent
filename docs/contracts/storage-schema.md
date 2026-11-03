@@ -43,7 +43,7 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 | `daily_summary` | `(athlete_id, calendar_date)` | Resting, min and max HR; steps; stress average, max and minutes by level; Body Battery min, max, charged, drained, end of day; respiration; intensity minutes; calories |
 | `activity_sample` | `(athlete_id, activity_id, elapsed_s)` | `heart_rate`, `cadence`, `power_w`, `speed_mps`, `distance_m`, `altitude_m`, `temperature_c`. FK to `activity`, cascade |
 | `activity_lap` | `(athlete_id, activity_id, lap_index)` | Start offset, elapsed and timer seconds, distance, HR, average power. FK to `activity`, cascade |
-| `sleep_summary` | `(athlete_id, calendar_date)` | Start and end, seconds by stage, naps, awake count, score, average HR (empty on real data, OPEN_QUESTIONS 33), stress, respiration, SpO2 |
+| `sleep_summary` | `(athlete_id, calendar_date)` | Start and end, seconds by stage, naps, awake count, score, average HR and SpO2 (always empty on real data: Garmin's sleep summaries send these keys as null), stress, respiration |
 | `hrv_summary` | `(athlete_id, calendar_date)` | Last night average and 5-min high, weekly average, Garmin's baseline bands, `status` code. Milliseconds |
 | `weight_daily` | `(athlete_id, calendar_date)` | Latest weigh-in in kg (Garmin sends grams despite the spec; converted, confirmed on real data 2026-11-03), BMI, body fat, entries. Sensitive: opt-in before reaching a model |
 

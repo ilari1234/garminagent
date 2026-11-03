@@ -111,10 +111,18 @@ counts, sizes and key names only; this summary keeps to ratios and rough sizes.
 - **Activity files:** every activity's file was stored, and every FIT file parsed with parser
   version 1; none were invalid. Every activity has samples; most, but not all, have laps.
 - **Wellness:** daily summaries are complete; sleep and HRV are present for almost every night.
-  Sleep average HR is empty for every night (OPEN_QUESTIONS 33). Body fat is empty for every
-  weigh-in, most likely because the scale doesn't measure it.
+  Sleep average HR and SpO2 are empty for every night: the sleep summaries carry `avgHeartRate`
+  and `averageSpO2Value` but always as null, and no other sleep key holds HR. Resting HR comes from
+  the daily summaries instead. Body fat is empty for every weigh-in, most likely because the scale
+  doesn't measure it. The sleep payload also carries free text and IDs, which the normalizer
+  already ignores.
 - **Weight unit:** every weigh-in arrives in **grams** and converts to a plausible weight, so the
   spec's "kilograms" is wrong for this endpoint and `normalize._kilograms` is right.
 - **Samples:** HR is in almost every row, speed and altitude in about nine rows of ten, cadence in
   about four of ten, power in about one of seven. `activity_sample` takes about 95 MB for two years
   and the whole database about 107 MB, so Postgres needs no downsampling or Parquet.
+- **Sample spacing:** about three quarters of gaps between samples are 1–3 s and nearly all the rest
+  4–10 s (smart recording); gaps over 10 s are rare and are pauses. Gaps of up to 10 s hold about
+  98 % of recorded time, which sets ADR 0013's gap rule.
+- **Per sport:** every activity has HR. Power appears only in most ski sessions, never in rides or
+  runs. Strength sessions are the activities without laps.
