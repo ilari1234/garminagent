@@ -50,7 +50,9 @@ reads both. No mantle projects are used. Fallback: Opus 4.8 on `bedrock-mantle` 
 **Database class.** `db.t4g.micro`, unless the orderability check or the real-data sample volume
 (OPEN_QUESTIONS 3, 8) says otherwise; then `db.t4g.small`.
 
-**Agent role.** `garminagent_agent` comes with M6f (owner, 2026-11-03); `db-bootstrap` creates it on RDS.
+**Agent role.** `garminagent_agent` comes with M6f (owner, 2026-11-03); `db-bootstrap` creates it on RDS,
+taking the name from M6f's `garminagent.storage` module and the password from a third URL secret,
+`AGENT_DATABASE_URL` (+$0.40/month).
 
 ## Alternatives considered
 

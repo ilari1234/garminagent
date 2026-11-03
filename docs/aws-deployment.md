@@ -196,7 +196,8 @@ that, and the retention-change alert fires if the setting then changes.
 - **Secrets Manager:** the RDS master password is managed by RDS
   ([RDS and Secrets Manager](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-secrets-manager.html)),
   so state holds only its ARN. Terraform creates three empty secrets: the Garmin key, `DATABASE_URL`
-  and `MIGRATION_DATABASE_URL`. The owner fills them from a terminal.
+  and `MIGRATION_DATABASE_URL`. A fourth, `AGENT_DATABASE_URL` for the agent role, is added once M6f
+  has defined that role. The owner fills them from a terminal.
 - **ECR:** private, immutable tags, keep the last 5 images. The image contains Garmin's FIT SDK and
   must not be shared: no repository policy granting other accounts, and the SCP denies
   `ecr-public:*`.
@@ -208,7 +209,8 @@ that, and the retention-change alert fires if the setting then changes.
   role reading only its own secrets, and its own task role:
   - `sync` and `status`: the Garmin key and `DATABASE_URL`; S3 read, write and delete on the blob bucket.
   - `db-upgrade`: `MIGRATION_DATABASE_URL` only.
-  - `db-bootstrap`: the RDS master secret and both URLs.
+  - `db-bootstrap`: the RDS master secret and the database URLs (two, three once M6f exists).
+  - Phase 3 agent tasks, later: `AGENT_DATABASE_URL` only.
 - Read-only root filesystem, non-root user (from the image), ECS Exec off.
 - Secrets are injected as environment variables at task start; a new value takes effect at the next
   task ([ECS secrets](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/secrets-envvar-secrets-manager.html)).
@@ -246,7 +248,7 @@ also bound to a GitHub environment that only `main` can deploy to.
 | `make_blob_store(settings)` | B3a | Replaces the direct `LocalBlobStore(settings.blob_dir)` calls in `cli.py` and `runner.py`. |
 | `storage/s3.py` | B3b | Implements the `BlobStore` protocol with `boto3` (Apache-2.0). Keys go through `validate_key`; a missing key raises `FileNotFoundError` ([ingestion contract](contracts/ingestion.md)). `boto3` is imported only when S3 is selected. Settings: `BLOB_BACKEND`, `BLOB_S3_BUCKET`. |
 | Tests | B3b | One contract suite over the local store and an in-memory fake S3 client. `types-boto3` (MIT) as a dev dependency. No network. |
-| `garminagent db-bootstrap` | B3b | RDS has no equivalent of the compose init script, and migrations must not run as the master user. Logs in with the RDS master secret, then creates the owner role, the app role and, once M6f has defined it, `garminagent_agent` (the owner chose M6f for that role, 2026-11-03). Role passwords come from the two existing URLs; no new secret format. |
+| `garminagent db-bootstrap` | B3b | RDS has no equivalent of the compose init script, and migrations must not run as the master user. Logs in with the RDS master secret, then creates the owner role, the app role and, once M6f has defined it, `garminagent_agent` (the owner chose M6f for that role, 2026-11-03). The agent role's name and grants come from the single `garminagent.storage` module M6f adds; migration 0011 applies the grants. Each role's password comes from its URL secret (`MIGRATION_DATABASE_URL`, `DATABASE_URL`, `AGENT_DATABASE_URL`); no other secret format. |
 | RDS CA bundle | B3b | Committed as a public file and copied into the image, so `verify-full` works. |
 | `DB_REQUIRE_VERIFY_FULL` | B3b | Turns the existing TLS warning in `storage/db.py` into a hard failure. Set in the task definitions, because the URLs are entered by hand. |
 
@@ -328,7 +330,7 @@ assumptions until measured.
 | RDS `db.t4g.micro` | $0.016/hour | 11.68 |
 | RDS gp3 storage | 20 GB at $0.12 | 2.40 |
 | RDS backups | up to the database size is free | 0.00 |
-| Secrets Manager | 4 secrets at $0.40 (3 created plus the RDS-managed one) | 1.60 |
+| Secrets Manager | 4 secrets at $0.40 (3 created plus the RDS-managed one); 5 with `AGENT_DATABASE_URL` after M6f, +$0.40 | 1.60 |
 | KMS | 1 customer-managed key | 1.00 |
 | Fargate | 20 task-hours at 0.5 vCPU and 1 GB, x86 | 0.54 |
 | Public IPv4 | 20 hours at $0.005 | 0.10 |
