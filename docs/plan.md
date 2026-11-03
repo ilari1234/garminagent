@@ -33,8 +33,9 @@ Applied from day one so "local" and "AWS" differ only by configuration:
 
 ## Garmin Personal API — evaluation summary
 
-Source: developer.garmin.com Personal API pages; spec in
-[garmin-personal-api/openapi.json](garmin-personal-api/openapi.json).
+Source: developer.garmin.com Personal API pages and Garmin's OpenAPI spec, which isn't
+redistributed here ([ADR 0014](../decisions/0014-openapi-spec-out-of-tree.md)): download it from
+Garmin and keep it at `docs/garmin-personal-api/openapi.json` (gitignored).
 
 - **Auth:** user creates an API key in Garmin Connect web (expiry 30/90/180/365 days, shown once).
   `POST https://personal.connectapi.garmin.com/personalapitoken-service/personal-api/personal-api-key/token`
