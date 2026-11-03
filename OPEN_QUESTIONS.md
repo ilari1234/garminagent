@@ -34,12 +34,10 @@ This repo is public: report findings as structure and counts, never real values.
 ## Awaiting owner review of plans
 
 4. **Approve or change the phase 2 plan** (ADR 0013), in session
-   `local_fd1bf39d-b9af-4b7f-839f-0941182001a1`. Its four questions:
-   - HR load coefficient `b` is sex-specific (1.92 / 1.67). Proposal: a setting
-     `ANALYTICS_TRIMP_B` instead of storing profile data. Which default?
-   - Create the agent database role in M6f, or wait for phase 3?
-   - Is HR-only running load acceptable for phase 2?
-   - M6a's `renormalize` + `analyze --check` is the first real-data run; can the weight check join it?
+   `local_fd1bf39d-b9af-4b7f-839f-0941182001a1`. Its four questions were answered on 2026-11-03
+   (recorded in the ADR): `ANALYTICS_TRIMP_B` is a required setting with no default, the agent role
+   comes in M6f, running load is HR-only, and the weight check runs with the real-data check.
+   Remaining: the owner's approval of the record as a whole.
 5. **Approve or change the AWS plan** (ADR 0008), in session
    `local_3947e9f8-3400-48e0-b30a-f47d3670fd2b`. Defaults unless the owner objects: `eu-north-1`,
    Terraform, re-sync migration, the listed exceptions to "only `infra/`".
@@ -69,7 +67,9 @@ ADR 0007 sets principles only.
 11. **Safety limits:** which ones, what numbers, on which metric. Early candidates were weekly load
     increase, acute:chronic ratio and rest days. **Conflict:** the phase 2 proposal omits the
     acute:chronic ratio because of methodological problems. Decide: drop it, or compute it only for
-    a limit. Thresholds shouldn't be invented by a model; their source needs documenting.
+    a limit. Phase 2's suggestion (ADR 0013): keep it out of analytics, and let phase 3 compute it
+    only if a limit chosen from documented sources needs it. Thresholds shouldn't be invented by a
+    model; their source needs documenting.
 12. **Lifecycle:** draft, evaluated, approved, active, superseded? Does any adjustment skip approval?
     Default: no.
 13. **What counts as evaluation:** the evaluator agent's inputs and how plan-versus-actual is measured.
