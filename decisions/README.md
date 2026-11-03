@@ -32,5 +32,5 @@ Where the owner's reason wasn't stated, the record says so instead of inventing 
 | [0010](0010-public-repository.md) | Public repository and what stayed in history | Accepted |
 | [0011](0011-supply-chain-controls.md) | Pinning, scanners and cooldown | Accepted |
 | [0012](0012-repo-as-orchestrator.md) | The repo, not a session, holds project state | Accepted |
-| [0013](0013-analytics-design.md) | Phase 2 metric definitions and storage | Proposed |
+| [0013](0013-analytics-design.md) | Phase 2 metric definitions and storage | Accepted |
 | [0014](0014-openapi-spec-out-of-tree.md) | Garmin's OpenAPI spec stays out of the tree | Accepted |
