@@ -1,6 +1,6 @@
 # Open questions
 
-Everything unresolved or deferred, as of 2026-11-03. Each item has enough context to pick up cold.
+Everything unresolved or deferred, as of 2026-11-04. Each item has enough context to pick up cold.
 **Owner** means only the project owner can answer or do it. Remove an item when it's settled, and
 record the answer in an ADR if it's a decision.
 
@@ -105,3 +105,20 @@ ADR 0007 sets principles only.
     because its PDF couldn't be opened (ADR 0013).
 32. **The scheduler health check** relies on `status --max-age-hours 13`. Whether it's noisy in
     practice is unknown.
+34. **Phase 1 review findings** ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md),
+    2026-11-04). Phase 1 isn't "done" until **H1** is fixed and re-checked: exceptions other than
+    Garmin and database errors (a non-JSON 200 body, a corrupt zip member) escape the run, write no
+    `sync_run`, and make the compose scheduler exit and restart in a loop. Should follow before
+    phase 2 relies on the data: M1 (a 401 or 403 on downloads marks files `unavailable` for good;
+    see item 28), M2 (no range checks on `activity` and `daily_summary`), M3 (duplicate keys in one
+    payload abort every run), M4 (app containers get the Postgres superuser password). The low
+    findings L1–L11 are in the review. Owner: track A.
+35. **Does the Personal API send sentinel values** (−1 or −2 for stress, 0 for HR) in daily summaries
+    or activities? The real-data check counts non-null values only. Adding counts of negative and
+    out-of-range values would answer this, and decides how strict M2's fix must be. Owner runs it.
+36. **Activities deleted or merged at Garmin** are never removed locally; sync only upserts. Decide
+    before M6b and M6c whether to reconcile, for example by flagging activities missing from a
+    refetched range, since phantom activities would inflate load.
+37. **Migration owner role locally.** The compose owner role is the Postgres superuser, and its
+    password reaches the app containers (review M4). Decide whether to split the env files only, or
+    also create a non-superuser schema owner in `docker/postgres/init`.
