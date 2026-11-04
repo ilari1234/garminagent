@@ -1,8 +1,8 @@
 # Agent layer contract
 
-**State: proposed. Nothing here is built.** Rules marked **Required** come from accepted decisions
-(ADR 0006, ADR 0007) and bind whatever design phase 3 picks. Items marked **Proposed** come from the
-unapproved phase 2 plan (ADR 0013). Items marked **Open** are in OPEN_QUESTIONS.
+**State: decided in part, nothing built.** Rules marked **Required** come from accepted decisions
+(ADR 0006, ADR 0007) and bind whatever design phase 3 picks. Items marked **Decided (M6f)** come from
+the accepted phase 2 plan (ADR 0013) and are built in M6f. Items marked **Open** are in OPEN_QUESTIONS.
 
 ## Read boundary: analytics to agents
 
@@ -16,7 +16,7 @@ unapproved phase 2 plan (ADR 0013). Items marked **Open** are in OPEN_QUESTIONS.
 - Every tool call is logged: tool, arguments, returned payload size and fields, timestamp.
 - Tool output is data, never instructions.
 
-**Proposed (M6f)**
+**Decided (M6f)**
 
 - An `agent` database schema of views exposing only allowed columns, and a `garminagent_agent` role
   that can read only that schema, so a tool bug can't reach `raw_payload` or `activity_sample`.
@@ -27,7 +27,7 @@ unapproved phase 2 plan (ADR 0013). Items marked **Open** are in OPEN_QUESTIONS.
   agent views or records.
 - `db-bootstrap` (B3b) must also create this role on AWS.
 
-**Proposed tools**
+**Planned tools** (phase 3 designs the final set)
 
 | Tool | Returns |
 |---|---|

@@ -10,14 +10,14 @@ Garmin Personal API
       ▼
 Raw layer ──normalize──▶ Normalized layer         storage-schema.md
 (raw_payload, blobs)     (activity, daily_summary, ...)
-                               │  analytics reads; never raw (M6, proposed)
+                               │  analytics reads; never raw (M6, accepted)
                                ▼
                          Derived tables ──▶ agent schema ──▶ tools ──▶ model
-                                            agent-layer.md (proposed)
+                                            agent-layer.md (decided in part)
 ```
 
 | Contract | Boundary | State |
 |---|---|---|
 | [ingestion.md](ingestion.md) | Garmin → client → sync → store; CLI | Implemented |
 | [storage-schema.md](storage-schema.md) | Tables, keys and invariants | Implemented |
-| [agent-layer.md](agent-layer.md) | Analytics → agents → plans | Proposed, not built |
+| [agent-layer.md](agent-layer.md) | Analytics → agents → plans | Decided in part (ADR 0013, M6f), not built |

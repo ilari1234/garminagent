@@ -32,11 +32,7 @@ rule to 10 s.
 
 ## Awaiting owner review of plans
 
-4. **Approve or change the phase 2 plan** (ADR 0013), in session
-   `local_fd1bf39d-b9af-4b7f-839f-0941182001a1`. Its four questions were answered on 2026-11-03
-   (recorded in the ADR): `ANALYTICS_TRIMP_B` is a required setting with no default, the agent role
-   comes in M6f, running load is HR-only, and the weight check runs with the real-data check.
-   Remaining: the owner's approval of the record as a whole.
+The phase 2 plan was accepted on 2026-11-03 (ADR 0013), with the owner's answers recorded there.
 
 The AWS plan was accepted on 2026-11-03 (ADR 0008, [docs/aws-deployment.md](docs/aws-deployment.md)).
 Its retention question (cross-Region scope, control plane vs mantle) was settled by setting `none` in

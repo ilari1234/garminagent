@@ -202,13 +202,13 @@ Security is part of each milestone's definition of done, not a later phase:
   via `--max-age-hours`); [operations.md](operations.md) covers setup, scheduling, monitoring,
   key rotation, upgrades, backups, deletion, AWS mapping and troubleshooting; migration 0005.
 
-## Phase 2 milestones (proposed)
+## Phase 2 milestones
 
-Unapproved: formulas, storage, recompute rules and alternatives are in
-[ADR 0013](../decisions/0013-analytics-design.md); the owner's questions are OPEN_QUESTIONS 4.
+Accepted 2026-11-03: formulas, storage, recompute rules and alternatives are in
+[ADR 0013](../decisions/0013-analytics-design.md).
 Analytics reads normalized tables only (plus `raw_payload` for `renormalize`), writes plain
-tables from Python, never fails the sync, and logs counts only. Before M6a merges: the owner's
-real-data check, and B3a from the AWS track.
+tables from Python, never fails the sync, and logs counts only. The real-data check is done; B3a
+from the AWS track (code-only) lands before M6a.
 
 - **M6a — Thresholds:** `hr_zones` dataset (one request per day) kept as history; threshold
   columns on `activity`, filled from stored raw payloads by `garminagent renormalize`; an
