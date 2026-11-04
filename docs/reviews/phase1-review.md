@@ -365,3 +365,31 @@ Notes that aren't findings:
 - GitHub settings (ruleset, secret scanning, CodeQL), the GHCR image's visibility and
   `pip-audit` results: owner-side, or outside git.
 - The phase 2 and AWS documents: out of scope.
+
+## Re-check of the fixes (2026-11-04)
+
+A fresh subagent checked `main` at `f845ae7` (#19) against H1 and M1–M4, reading the code and
+tests and running the non-Postgres tests (101 passed); CI on #19, including the Postgres tests,
+was green. The planning session confirmed its new findings in the code, and reproduced N2.
+
+**Verdict: phase 1 is done.** No high finding is unresolved, and nothing new is high.
+
+| Finding | Verdict | Test that fails if the fix is reverted |
+|---|---|---|
+| H1 | Resolved: non-JSON bodies and unreadable zips become Garmin errors; other exceptions end the run as `internal_error`; the scheduler backs off instead of exiting; `KeyboardInterrupt` and `SystemExit` still stop it | client tests for non-JSON and corrupt zips; sync tests for both, and for `internal_error`; runner and scheduler tests |
+| M1 | Resolved: only 404/410 mark a file `unavailable` | sync tests for 401/403 and another 4xx (410 untested) |
+| M2 | Resolved: every numeric field of activities and daily summaries is range-checked; legitimate zeros and Body Battery sums above 100 are kept | normalization tests |
+| M3 | Resolved: the last row per key wins | repository test |
+| M4 | Resolved for `POSTGRES_PASSWORD` and `MIGRATION_DATABASE_URL`; no documented command breaks | none (compose) |
+
+New findings, all low (tracked in OPEN_QUESTIONS 34):
+
+- **N1** (from the M1 fix): 50 or more downloads that keep answering another 4xx end the download
+  loop early, so older files are never tried while the run reports complete.
+- **N2** (gap in H1's zip handling): a zip with the UTF-8 name flag and an invalid name raises
+  `UnicodeDecodeError`, which ends every run at that file as `internal_error`.
+- **N3** (doc drift, like L2): an `internal_error` raised outside `Syncer.run` isn't recorded in
+  `sync_run`. The ingestion contract now says so.
+
+Observation, not new: a download answering 200 with an HTML page is still marked `invalid` for
+good, the same "a glitch writes files off" pattern as M1 on a success status.
