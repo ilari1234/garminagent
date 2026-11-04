@@ -34,3 +34,4 @@ Where the owner's reason wasn't stated, the record says so instead of inventing 
 | [0012](0012-repo-as-orchestrator.md) | The repo, not a session, holds project state | Accepted |
 | [0013](0013-analytics-design.md) | Phase 2 metric definitions and storage | Accepted |
 | [0014](0014-openapi-spec-out-of-tree.md) | Garmin's OpenAPI spec stays out of the tree | Accepted |
+| [0015](0015-sync-failure-handling.md) | Sync failure handling after the phase 1 review | Accepted |

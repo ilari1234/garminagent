@@ -42,6 +42,10 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD}@db:5432/garminagent
+      # .env also holds the schema owner's (superuser) password. Blank it and the migration URL
+      # here, so code in the app container can't connect as the owner; only `migrate` needs them.
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
     volumes:
       - appdata:/data
     depends_on:
@@ -68,6 +72,8 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://garminagent_app:${APP_DB_PASSWORD}@db:5432/garminagent
+      POSTGRES_PASSWORD: "" # as in scheduler: no owner credentials in the app container
+      MIGRATION_DATABASE_URL: ""
     volumes:
       - appdata:/data
     depends_on:

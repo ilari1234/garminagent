@@ -8,8 +8,15 @@ import pytest
 from pydantic import SecretStr
 
 from garminagent.config import Settings
-from garminagent.garmin import RANGE_LIMITS, GarminAuthError, GarminClient, UnexpectedFileError, date_chunks
-from tests.garmin.fakes import FakeGarmin, load_fixture, make_fit, make_zip
+from garminagent.garmin import (
+    RANGE_LIMITS,
+    GarminAuthError,
+    GarminClient,
+    GarminResponseError,
+    UnexpectedFileError,
+    date_chunks,
+)
+from tests.garmin.fakes import FakeGarmin, load_fixture, make_corrupt_zip, make_fit, make_zip
 
 D = date(2026, 10, 1)
 E = date(2026, 10, 14)
@@ -142,6 +149,14 @@ def test_payloads_are_returned_unchanged(garmin: FakeGarmin) -> None:
         assert client.get_daily_summaries(D, E) == fixture
 
 
+def test_success_with_a_body_that_is_not_json_is_a_garmin_error(garmin: FakeGarmin) -> None:
+    garmin.reply("GET", "/usersummary-service/v2/dailysummaries", httpx.Response(200, text="<html>maintenance</html>"))
+    with garmin.client(min_interval=0) as client, pytest.raises(GarminResponseError) as caught:
+        client.get_daily_summaries(D, E)
+    assert caught.value.status == 200
+    assert "maintenance" not in str(caught.value)  # the body is never quoted
+
+
 def test_no_content_returns_none(garmin: FakeGarmin) -> None:
     garmin.reply("GET", "/periodichealth-service/menstrualcycle/summary/2026-10-01", httpx.Response(204))
     with garmin.client(min_interval=0) as client:
@@ -239,8 +254,9 @@ def test_download_accepts_bare_fit(garmin: FakeGarmin) -> None:
         (b"<html>not a file</html>", "neither a zip nor a FIT"),
         (make_zip({"42.gpx": b"<gpx/>"}), "no .fit member"),
         (make_zip({"42.fit": b"definitely not fit data"}), "lacks the FIT signature"),
+        (make_corrupt_zip(), "can't be read"),
     ],
-    ids=["html", "zip-without-fit", "fit-without-signature"],
+    ids=["html", "zip-without-fit", "fit-without-signature", "corrupt-zip"],
 )
 def test_download_rejects_unexpected_files(garmin: FakeGarmin, content: bytes, message: str) -> None:
     garmin.reply("GET", FILE_PATH, httpx.Response(200, content=content))

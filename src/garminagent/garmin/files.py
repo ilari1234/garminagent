@@ -3,6 +3,7 @@ expected to be one FIT file per activity (several for some multisport activities
 
 import io
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 
 from garminagent.garmin.errors import UnexpectedFileError
@@ -29,13 +30,30 @@ def parse_activity_file(activity_id: int, content: bytes) -> ActivityFile:
     if not zipfile.is_zipfile(io.BytesIO(content)):
         raise UnexpectedFileError(f"activity {activity_id}: download is neither a zip nor a FIT file", "not_zip_or_fit")
 
-    with zipfile.ZipFile(io.BytesIO(content)) as archive:
-        members = [m for m in archive.infolist() if not m.is_dir()]
-        if sum(m.file_size for m in members) > MAX_UNCOMPRESSED_BYTES:
-            raise UnexpectedFileError(
-                f"activity {activity_id}: zip expands beyond {MAX_UNCOMPRESSED_BYTES} bytes", "too_large"
-            )
-        fit_files = {m.filename: archive.read(m) for m in members if m.filename.lower().endswith(".fit")}
+    # A zip can pass is_zipfile and still fail to read: a bad CRC, an encrypted member, an
+    # unsupported compression method, or a bomb that understates its size (zipfile stops at the
+    # declared size). Each must mark the file invalid; an exception escaping here would fail
+    # every run on the same file.
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            members = [m for m in archive.infolist() if not m.is_dir()]
+            if sum(m.file_size for m in members) > MAX_UNCOMPRESSED_BYTES:
+                raise UnexpectedFileError(
+                    f"activity {activity_id}: zip expands beyond {MAX_UNCOMPRESSED_BYTES} bytes", "too_large"
+                )
+            fit_files = {m.filename: archive.read(m) for m in members if m.filename.lower().endswith(".fit")}
+    except UnexpectedFileError:
+        raise
+    except (
+        zipfile.BadZipFile,
+        zipfile.LargeZipFile,
+        RuntimeError,
+        NotImplementedError,
+        EOFError,
+        OSError,
+        zlib.error,
+    ) as exc:
+        raise UnexpectedFileError(f"activity {activity_id}: zip can't be read", "corrupt_zip") from exc
 
     if not fit_files:
         names = sorted(m.filename.rsplit(".", 1)[-1] for m in members)

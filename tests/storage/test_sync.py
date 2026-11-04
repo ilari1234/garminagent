@@ -27,7 +27,7 @@ from garminagent.storage.models import (
 )
 from garminagent.storage.repository import SyncRange, get_cursor
 from garminagent.sync import ACTIVITIES, DAILY_SUMMARIES, HRV, SLEEP, WEIGHT, Syncer, SyncReport
-from tests.garmin.fakes import FakeGarmin, make_activity_fit, make_zip
+from tests.garmin.fakes import FakeGarmin, make_activity_fit, make_corrupt_zip, make_zip
 from tests.storage.conftest import PgDatabase
 
 pytestmark = pytest.mark.integration
@@ -246,6 +246,84 @@ def test_server_error_on_download_stops_and_retries_later(
 
     assert report.stopped == "garmin_error"
     assert file_statuses(app_sessions) == {None: 31}  # not marked: tried again next run
+
+
+def downloads(garmin: FakeGarmin) -> int:
+    return len([s for s in garmin.seen if s.path.startswith("/download-service/")])
+
+
+def test_body_that_is_not_json_stops_the_run_cleanly(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != DAILY_PATH]
+    garmin.reply("GET", DAILY_PATH, httpx.Response(200, text="<html>down for maintenance</html>"))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.stopped == "garmin_error"  # a recorded stop, not an exception
+    assert cursor(app_sessions, DAILY_SUMMARIES) is None
+
+
+def test_corrupt_zip_marks_the_file_invalid_and_is_not_retried(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != DOWNLOAD_PATTERN]
+    garmin.route("GET", DOWNLOAD_PATTERN, lambda request: httpx.Response(200, content=make_corrupt_zip()))
+
+    assert run_sync(garmin, app_sessions, blobs).complete
+    assert file_statuses(app_sessions) == {"invalid": 31}
+    tried = downloads(garmin)
+    assert run_sync(garmin, app_sessions, blobs).complete
+    assert downloads(garmin) == tried
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_auth_refusal_on_downloads_stops_without_marking_files(
+    status: int, garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != DOWNLOAD_PATTERN]
+    garmin.route("GET", DOWNLOAD_PATTERN, lambda request: httpx.Response(status))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.stopped == "garmin_error"
+    assert file_statuses(app_sessions) == {None: 31}  # none written off: tried again next run
+
+
+def test_other_refusal_on_a_download_leaves_it_for_the_next_run(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != DOWNLOAD_PATTERN]
+    garmin.route("GET", DOWNLOAD_PATTERN, lambda request: httpx.Response(400))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert report.counts["activity_files"]["errors"] == 31
+    assert file_statuses(app_sessions) == {None: 31}
+    assert downloads(garmin) == 31  # once each per run
+
+
+def test_unexpected_exception_stops_the_run_as_internal_error(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("synthetic failure 7f3a")
+
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != SEARCH_PATH]
+    garmin.route("GET", SEARCH_PATH, broken)
+
+    with caplog.at_level(logging.INFO):
+        report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.stopped == "internal_error"
+    assert count(app_sessions, DailySummary) == 92  # earlier datasets kept
+    assert "unexpected error: RuntimeError" in caplog.text
+    assert "7f3a" not in caplog.text  # class name only, never the message
 
 
 def test_earlier_start_extends_history_backwards(

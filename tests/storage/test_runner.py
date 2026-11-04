@@ -15,6 +15,7 @@ from garminagent.garmin import GarminAuthError, GarminClient
 from garminagent.runner import ALREADY_RUNNING, AUTH_FAILED, EXIT_ERROR, EXIT_OK, run_sync_once, status
 from garminagent.storage.db import make_engine, sync_lock
 from garminagent.storage.models import SyncRun
+from garminagent.sync import INTERNAL_ERROR
 from tests.garmin.fakes import FakeGarmin
 from tests.storage.conftest import PgDatabase
 from tests.storage.test_sync import FakeAccount
@@ -91,6 +92,18 @@ def test_auth_failure_is_recorded_and_fails(
     assert (outcome.stopped, outcome.exit_code) == (AUTH_FAILED, EXIT_ERROR)
     (run,) = runs(app_sessions)
     assert run.stopped == AUTH_FAILED
+
+
+def test_unexpected_error_fails_the_run_with_a_code(
+    settings: Settings, app_sessions: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(settings: Settings) -> GarminClient:
+        raise ValueError("synthetic failure")
+
+    monkeypatch.setattr(GarminClient, "from_settings", broken)
+    outcome = run_sync_once(settings)
+
+    assert (outcome.stopped, outcome.exit_code) == (INTERNAL_ERROR, EXIT_ERROR)
 
 
 def test_status_and_health(settings: Settings, fake_garmin: FakeGarmin, app_sessions: sessionmaker[Session]) -> None:

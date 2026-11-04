@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Self, cast
 
 from garminagent.config import Settings
-from garminagent.garmin.errors import GarminAuthError, GarminError
+from garminagent.garmin.errors import GarminAuthError, GarminError, GarminResponseError
 from garminagent.garmin.files import ActivityFile, parse_activity_file
 from garminagent.garmin.transport import GarminTransport, QueryParams
 
@@ -82,7 +82,10 @@ class GarminClient(GarminTransport):
         resp = self.request("GET", path, params)
         if resp.status_code == 204 or not resp.content:
             return None
-        return cast(Json, resp.json())
+        try:
+            return cast(Json, resp.json())
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError are both ValueErrors
+            raise GarminResponseError(resp.status_code, "GET", path) from exc
 
     # --- profile ---
 

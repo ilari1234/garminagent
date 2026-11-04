@@ -23,7 +23,9 @@ from garminagent.storage.models import Athlete
 from garminagent.storage.repository import purge_athlete
 from garminagent.sync import FIT_FILES, SyncReport, parse_pending_fit_files
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+# Tracebacks must never print local variables: the transport holds the Authorization header in
+# one. Typer's current default is False; pin it so a default change can't leak secrets.
+app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_show_locals=False)
 log = logging.getLogger("garminagent")
 
 
