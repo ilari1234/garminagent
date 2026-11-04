@@ -32,7 +32,7 @@ from garminagent.storage.repository import (
     last_sync_run,
     record_sync_run,
 )
-from garminagent.sync import DEFAULT_HISTORY_DAYS, Syncer, SyncReport
+from garminagent.sync import DEFAULT_HISTORY_DAYS, INTERNAL_ERROR, Syncer, SyncReport
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ ALREADY_RUNNING = "already_running"
 AUTH_FAILED = "auth_failed"
 DATABASE_ERROR = "database_error"
 # Stops that mean something is wrong (as opposed to "come back later").
-FAILURES = {"garmin_error", AUTH_FAILED, DATABASE_ERROR}
+FAILURES = {"garmin_error", AUTH_FAILED, DATABASE_ERROR, INTERNAL_ERROR}
 RATE_LIMIT_PAUSE_S = 2 * 3600
 
 
@@ -99,6 +99,11 @@ def run_sync_once(
     except SQLAlchemyError as exc:
         log.error("sync failed: database error %s", exc.__class__.__name__)
         return RunOutcome(DATABASE_ERROR, None, EXIT_ERROR)
+    except Exception as exc:
+        # Outside what Syncer.run already catches (e.g. building the client): fail this run with
+        # a code, never a traceback. Class name only: the message may quote data.
+        log.error("sync failed: unexpected error %s", exc.__class__.__name__)
+        return RunOutcome(INTERNAL_ERROR, None, EXIT_ERROR)
     finally:
         engine.dispose()
     if report.stopped == "rate_limited":
@@ -116,7 +121,7 @@ def next_delay_s(stopped: str | None, consecutive_failures: int, interval_s: flo
         return catch_up_s  # more to do: continue soon
     if stopped == "rate_limited":
         return max(interval_s, RATE_LIMIT_PAUSE_S)  # give Garmin a proper break
-    if stopped in {"garmin_error", DATABASE_ERROR}:
+    if stopped in {"garmin_error", DATABASE_ERROR, INTERNAL_ERROR}:
         return min(interval_s, catch_up_s * 2 ** min(consecutive_failures, 8))  # back off
     return interval_s  # complete, already running, or auth failed (needs a human anyway)
 
@@ -129,10 +134,17 @@ def run_schedule(
     catch_up_s: float,
     max_runs: int | None = None,
 ) -> int:
-    """Run, wait, repeat until `wait` reports a stop request (or `max_runs`). Returns runs made."""
+    """Run, wait, repeat until `wait` reports a stop request (or `max_runs`). Returns runs made.
+
+    An exception from a run counts as a failed run and backs off. Letting it end the loop would
+    make the container restart and sync again at once, repeating Garmin requests every time."""
     runs = failures = 0
     while True:
-        stopped = run_once()
+        try:
+            stopped = run_once()
+        except Exception as exc:
+            log.error("sync run failed: unexpected error %s", exc.__class__.__name__)
+            stopped = INTERNAL_ERROR
         runs += 1
         failures = failures + 1 if stopped in FAILURES else 0
         delay = next_delay_s(stopped, failures, interval_s, catch_up_s)

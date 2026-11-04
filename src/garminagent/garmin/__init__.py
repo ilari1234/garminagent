@@ -6,6 +6,7 @@ from garminagent.garmin.errors import (
     GarminAuthError,
     GarminError,
     GarminRateLimitError,
+    GarminResponseError,
     UnexpectedFileError,
 )
 from garminagent.garmin.files import ActivityFile
@@ -18,6 +19,7 @@ __all__ = [
     "GarminClient",
     "GarminError",
     "GarminRateLimitError",
+    "GarminResponseError",
     "Json",
     "UnexpectedFileError",
     "date_chunks",

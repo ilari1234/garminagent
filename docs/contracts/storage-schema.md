@@ -24,8 +24,9 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 4. **Upserts always set `updated_at`**, even when values are unchanged, so it means "last written", not
    "last changed". Recent days and activities are rewritten on every run.
 5. **`raw_payload_id` is optional and `SET NULL`** on delete; provenance, not a dependency.
-6. **Missing means NULL.** Values out of plausible range become NULL at parsing. Almost all measures
-   are nullable, so consumers must handle NULL.
+6. **Missing means NULL.** Values out of plausible range become NULL at parsing, in every dataset
+   (activities and daily summaries since ADR 0015; older rows keep their values until re-normalized).
+   Almost all measures are nullable, so consumers must handle NULL.
 7. **Roles:** the app role has DML only. A new table's migration must grant it, and test it in
    `tests/storage/test_privileges.py`.
 8. **Migrations are linear, numbered and run as the owner.** Next: 0006. Only track A adds them.

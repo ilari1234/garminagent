@@ -161,7 +161,16 @@ def _upsert(
 ) -> int:
     if not records:
         return 0
-    rows = [{**asdict(r), "athlete_id": athlete_id, "raw_payload_id": raw_payload_id} for r in records]
+    # One multi-row INSERT ... ON CONFLICT can't touch the same key twice (Postgres raises
+    # CardinalityViolation), so a payload repeating a key would fail every run at the same chunk.
+    # Keep the last row per key, as a refetch would.
+    by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for r in records:
+        row = {**asdict(r), "athlete_id": athlete_id, "raw_payload_id": raw_payload_id}
+        by_key[tuple(row[c] for c in key_columns)] = row
+    rows = list(by_key.values())
+    if len(rows) < len(records):
+        log.warning("%s: %d rows repeated a key; kept the last of each", model.__tablename__, len(records) - len(rows))
     stmt = insert(model).values(rows)
     updates = {c: stmt.excluded[c] for c in rows[0] if c not in key_columns}
     session.execute(stmt.on_conflict_do_update(index_elements=key_columns, set_={**updates, "updated_at": func.now()}))

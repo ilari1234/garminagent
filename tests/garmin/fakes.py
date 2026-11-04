@@ -82,6 +82,14 @@ def make_zip(members: dict[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
+def make_corrupt_zip() -> bytes:
+    """A zip that passes `zipfile.is_zipfile` (its directory is intact) but whose FIT member can't
+    be read back: one byte of the compressed data is flipped."""
+    data = bytearray(make_zip({"42.fit": make_fit(b"\x01" * 256)}))
+    data[40] ^= 0xFF  # inside the member's data: header (30 bytes) + "42.fit" (6) + a few bytes
+    return bytes(data)
+
+
 class FakeTime:
     """Monotonic and wall clock in one; sleeping advances time instantly."""
 

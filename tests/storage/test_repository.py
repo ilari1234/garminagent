@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from garminagent.garmin.files import parse_activity_file
-from garminagent.normalize import parse_activities, parse_daily_summaries
+from garminagent.normalize import DailySummaryRecord, parse_activities, parse_daily_summaries
 from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.models import Activity, ActivityFile, Athlete, DailySummary, RawPayload, SyncCursor
 from garminagent.storage.repository import (
@@ -87,6 +87,19 @@ def test_bare_fit_download_gets_distinct_keys(app_sessions: sessionmaker[Session
         keys = sorted(session.scalars(select(ActivityFile.blob_key)).all())
     assert keys[0].endswith(".fit") and keys[0].split("/")[-1].startswith("fit-")
     assert keys[1].endswith(".fit") and keys[1].split("/")[-1].startswith("original-")
+
+
+def test_upsert_keeps_the_last_of_repeated_keys(app_sessions: sessionmaker[Session]) -> None:
+    day = date(2026, 10, 1)
+    repeated = [
+        DailySummaryRecord(calendar_date=day, resting_hr=50),
+        DailySummaryRecord(calendar_date=day, resting_hr=52),
+    ]
+    with app_sessions.begin() as session:
+        athlete = ensure_athlete(session)
+        assert upsert_daily_summaries(session, athlete, repeated) == 1  # no CardinalityViolation
+    with app_sessions() as session:
+        assert session.scalars(select(DailySummary.resting_hr)).all() == [52]
 
 
 def test_upserts_insert_then_update(app_sessions: sessionmaker[Session]) -> None:

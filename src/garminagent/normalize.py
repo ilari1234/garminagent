@@ -82,6 +82,9 @@ class _Lenient(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+MAX_DURATION_S = 1_000_000.0  # ~11.5 days; the same cap as FIT parsing
+
+
 # --- activities (activity search items; the spec's SummarizedActivityDTO) ---
 
 
@@ -145,26 +148,28 @@ def parse_activities(items: Any) -> Normalized[ActivityRecord]:
                 start_time_local=start_local,
                 sport=raw.activityType.typeKey if raw.activityType else None,
                 event_type=raw.eventType.typeKey if raw.eventType else None,
-                duration_s=raw.duration,
-                moving_duration_s=raw.movingDuration,
-                elapsed_duration_s=raw.elapsedDuration,
-                distance_m=raw.distance,
-                elevation_gain_m=raw.elevationGain,
-                elevation_loss_m=raw.elevationLoss,
-                avg_hr=raw.averageHR,
-                max_hr=raw.maxHR,
-                avg_power_w=raw.avgPower,
-                normalized_power_w=raw.normPower,
-                aerobic_te=raw.aerobicTrainingEffect,
-                anaerobic_te=raw.anaerobicTrainingEffect,
+                # Out-of-range values (including -1/-2 "no data" markers) become None, like the
+                # other datasets (storage contract, invariant 6).
+                duration_s=_within(raw.duration, 0, MAX_DURATION_S),
+                moving_duration_s=_within(raw.movingDuration, 0, MAX_DURATION_S),
+                elapsed_duration_s=_within(raw.elapsedDuration, 0, MAX_DURATION_S),
+                distance_m=_within(raw.distance, 0, 1_000_000),
+                elevation_gain_m=_within(raw.elevationGain, 0, 20_000),
+                elevation_loss_m=_within(raw.elevationLoss, 0, 20_000),
+                avg_hr=_within(raw.averageHR, 20, 250),
+                max_hr=_within(raw.maxHR, 20, 250),
+                avg_power_w=_within(raw.avgPower, 0, 3000),
+                normalized_power_w=_within(raw.normPower, 0, 3000),
+                aerobic_te=_within(raw.aerobicTrainingEffect, 0, 5),
+                anaerobic_te=_within(raw.anaerobicTrainingEffect, 0, 5),
                 training_effect_label=raw.trainingEffectLabel,
-                training_load=raw.activityTrainingLoad,
-                vo2max=raw.vO2MaxValue,
-                hr_zone_1_s=raw.hrTimeInZone_1,
-                hr_zone_2_s=raw.hrTimeInZone_2,
-                hr_zone_3_s=raw.hrTimeInZone_3,
-                hr_zone_4_s=raw.hrTimeInZone_4,
-                hr_zone_5_s=raw.hrTimeInZone_5,
+                training_load=_within(raw.activityTrainingLoad, 0, 10_000),
+                vo2max=_within(raw.vO2MaxValue, 10, 100),
+                hr_zone_1_s=_within(raw.hrTimeInZone_1, 0, MAX_DURATION_S),
+                hr_zone_2_s=_within(raw.hrTimeInZone_2, 0, MAX_DURATION_S),
+                hr_zone_3_s=_within(raw.hrTimeInZone_3, 0, MAX_DURATION_S),
+                hr_zone_4_s=_within(raw.hrTimeInZone_4, 0, MAX_DURATION_S),
+                hr_zone_5_s=_within(raw.hrTimeInZone_5, 0, MAX_DURATION_S),
             )
         )
     if result.skipped:
@@ -251,26 +256,33 @@ def parse_daily_summaries(payload: Any) -> Normalized[DailySummaryRecord]:
         result.records.append(
             DailySummaryRecord(
                 calendar_date=raw.calendarDate,
-                resting_hr=hr.restingValue if hr else None,
-                min_hr=hr.minValue if hr else None,
-                max_hr=hr.maxValue if hr else None,
-                steps=_steps(raw.movement),
-                stress_avg=stress.avgLevel if stress else None,
-                stress_max=stress.maxLevel if stress else None,
-                body_battery_min=bb.minValue if bb else None,
-                body_battery_max=bb.maxValue if bb else None,
-                body_battery_charged=bb.chargedValue if bb else None,
-                body_battery_drained=bb.drainedValue if bb else None,
-                respiration_avg=raw.respiration.avgValue if raw.respiration else None,
-                intensity_moderate_min=raw.intensityMinutes.moderate if raw.intensityMinutes else None,
-                intensity_vigorous_min=raw.intensityMinutes.vigorous if raw.intensityMinutes else None,
-                calories_total=raw.calories.burnedTotal if raw.calories else None,
-                calories_active=raw.calories.burnedActive if raw.calories else None,
+                # Out-of-range values (including -1/-2 "no data" markers) become None.
+                resting_hr=_within_int(hr.restingValue, 20, 250) if hr else None,
+                min_hr=_within_int(hr.minValue, 20, 250) if hr else None,
+                max_hr=_within_int(hr.maxValue, 20, 250) if hr else None,
+                steps=_within_int(_steps(raw.movement), 0, 200_000),
+                stress_avg=_within_int(stress.avgLevel, 0, 100) if stress else None,
+                stress_max=_within_int(stress.maxLevel, 0, 100) if stress else None,
+                body_battery_min=_within_int(bb.minValue, 0, 100) if bb else None,
+                body_battery_max=_within_int(bb.maxValue, 0, 100) if bb else None,
+                # Charged and drained are daily sums, which can pass 100 when Body Battery
+                # recharges more than once a day.
+                body_battery_charged=_within_int(bb.chargedValue, 0, 1000) if bb else None,
+                body_battery_drained=_within_int(bb.drainedValue, 0, 1000) if bb else None,
+                respiration_avg=_within(raw.respiration.avgValue, 1, 80) if raw.respiration else None,
+                intensity_moderate_min=_within_int(raw.intensityMinutes.moderate, 0, 1440)
+                if raw.intensityMinutes
+                else None,
+                intensity_vigorous_min=_within_int(raw.intensityMinutes.vigorous, 0, 1440)
+                if raw.intensityMinutes
+                else None,
+                calories_total=_within_int(raw.calories.burnedTotal, 0, 30_000) if raw.calories else None,
+                calories_active=_within_int(raw.calories.burnedActive, 0, 30_000) if raw.calories else None,
                 stress_rest_min=_minutes(stress.restDurationInMillis) if stress else None,
                 stress_low_min=_minutes(stress.lowStressDurationInMillis) if stress else None,
                 stress_medium_min=_minutes(stress.mediumStressDurationInMillis) if stress else None,
                 stress_high_min=_minutes(stress.highStressDurationInMillis) if stress else None,
-                body_battery_end_of_day=bb.endOfDayValue if bb else None,
+                body_battery_end_of_day=_within_int(bb.endOfDayValue, 0, 100) if bb else None,
             )
         )
     if result.skipped:

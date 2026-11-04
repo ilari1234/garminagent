@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from garminagent.fit import PARSER_VERSION, FitParseError, parse_fit
@@ -77,6 +78,10 @@ ACTIVITY_CHUNK_DAYS = 90  # small enough that an interrupted backfill loses litt
 FILE_BATCH = 50
 FILE_PROGRESS_EVERY = 25
 FIT_PARSE_BATCH = 50
+# Download answers that prove Garmin has no file; only these mark a file `unavailable` for good.
+FILE_GONE_STATUSES = (404, 410)
+# Stop reason for an exception no handler expected (ADR 0015).
+INTERNAL_ERROR = "internal_error"
 
 
 def plan_chunks(
@@ -112,7 +117,7 @@ def extend(cursor: SyncRange | None, chunk: SyncRange) -> SyncRange:
 class SyncReport:
     counts: dict[str, dict[str, int]] = field(default_factory=dict[str, dict[str, int]])
     requests: int = 0
-    stopped: str | None = None  # None (complete), "budget", "rate_limited" or "garmin_error"
+    stopped: str | None = None  # None (complete), "budget", "rate_limited", "garmin_error" or "internal_error"
 
     @property
     def complete(self) -> bool:
@@ -193,6 +198,14 @@ class Syncer:
         except GarminError as exc:
             log.error("stopping after Garmin error: %s", exc)
             self._report.stopped = "garmin_error"
+        except SQLAlchemyError:
+            raise  # the runner records it as database_error
+        except Exception as exc:
+            # A bug, or input no handler expected: stop this run but still parse FIT files and
+            # record it, rather than failing the same way on every restart. Class name only: the
+            # message may quote data.
+            log.error("stopping after unexpected error: %s", exc.__class__.__name__)
+            self._report.stopped = INTERNAL_ERROR
         self._report.requests = self._client.requests_made
         parse_pending_fit_files(self._sessions, self._blobs, athlete, self._report)
         log.info(
@@ -356,9 +369,18 @@ class Syncer:
         try:
             file = self._client.download_activity_file(activity_id)
         except GarminApiError as exc:
-            if not 400 <= exc.status < 500:
-                raise  # server trouble: stop the run, retry next time
-            status = "unavailable"  # e.g. manual entries without a file
+            if exc.status in FILE_GONE_STATUSES:
+                status = "unavailable"  # e.g. manual entries without a file
+            elif 400 <= exc.status < 500 and exc.status not in (401, 403):
+                # Another refusal: not proof the file doesn't exist, so leave it untried (NULL)
+                # and count it; it's tried once per run until it resolves.
+                log.warning("activity %d: download answered HTTP %d; retrying next run", activity_id, exc.status)
+                self._report.add(ACTIVITY_FILES, "errors")
+                return
+            else:
+                # 401/403 (an auth problem, not a missing file) or server trouble: stop the run, so
+                # a short glitch at Garmin can't mark files missing for good.
+                raise
         except UnexpectedFileError as exc:
             log.warning("activity %d: file rejected (%s)", activity_id, exc.reason)
             status = "invalid"

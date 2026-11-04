@@ -106,19 +106,16 @@ ADR 0007 sets principles only.
 32. **The scheduler health check** relies on `status --max-age-hours 13`. Whether it's noisy in
     practice is unknown.
 34. **Phase 1 review findings** ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md),
-    2026-11-04). Phase 1 isn't "done" until **H1** is fixed and re-checked: exceptions other than
-    Garmin and database errors (a non-JSON 200 body, a corrupt zip member) escape the run, write no
-    `sync_run`, and make the compose scheduler exit and restart in a loop. Should follow before
-    phase 2 relies on the data: M1 (a 401 or 403 on downloads marks files `unavailable` for good;
-    see item 28), M2 (no range checks on `activity` and `daily_summary`), M3 (duplicate keys in one
-    payload abort every run), M4 (app containers get the Postgres superuser password). The low
-    findings L1–L11 are in the review. Owner: track A.
+    2026-11-04). H1 and M1–M4 are fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md)).
+    Phase 1 is "done" once a short re-check by a fresh session or subagent confirms those fixes
+    against the review. The low findings L1–L11 remain. Owner: track A.
 35. **Does the Personal API send sentinel values** (−1 or −2 for stress, 0 for HR) in daily summaries
-    or activities? The real-data check counts non-null values only. Adding counts of negative and
-    out-of-range values would answer this, and decides how strict M2's fix must be. Owner runs it.
+    or activities? Since #19 they become NULL at parsing either way; rows stored earlier keep them
+    until re-normalized (M6a's `renormalize`). Counting out-of-range values in the real-data check
+    would show whether that matters.
 36. **Activities deleted or merged at Garmin** are never removed locally; sync only upserts. Decide
     before M6b and M6c whether to reconcile, for example by flagging activities missing from a
     refetched range, since phantom activities would inflate load.
-37. **Migration owner role locally.** The compose owner role is the Postgres superuser, and its
-    password reaches the app containers (review M4). Decide whether to split the env files only, or
-    also create a non-superuser schema owner in `docker/postgres/init`.
+37. **Migration owner role locally.** Since #19 the owner password no longer reaches the app
+    containers (compose blanks it, ADR 0015), but the owner role is still the Postgres superuser.
+    Decide whether to also create a non-superuser schema owner in `docker/postgres/init`.

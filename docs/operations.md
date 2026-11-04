@@ -72,7 +72,8 @@ docker compose logs -f scheduler   # progress lines: counts and date ranges only
 `status` shows the last run (when, complete or why it stopped, requests used), the synced
 date range per dataset and pending activity / FIT files. The scheduler's health check runs
 `status --max-age-hours 13`: it turns **unhealthy** if no run has finished in 13 hours (two
-missed intervals) or the last run failed (`auth_failed`, `garmin_error`, `database_error`).
+missed intervals) or the last run failed (`auth_failed`, `garmin_error`, `database_error`,
+`internal_error`).
 
 | `stopped` | Meaning | Action |
 |---|---|---|
@@ -83,9 +84,12 @@ missed intervals) or the last run failed (`auth_failed`, `garmin_error`, `databa
 | `garmin_error` | Garmin 5xx or an unexpected response | usually transient; check logs if it repeats |
 | `auth_failed` | key missing, expired or deleted | rotate the key (below) |
 | `database_error` | Postgres unreachable or misconfigured | `docker compose ps db`, check passwords in `.env` |
+| `internal_error` | an unexpected error (logs name its class) | the scheduler backs off and retries; if it repeats, check the logs and report it |
 
 A dataset that answers 4xx (e.g. a feature your account doesn't have) is skipped for that run
-and shows up as `"errors"` in its counts; the other datasets continue.
+and shows up as `"errors"` in its counts; the other datasets continue. Activity file downloads
+are marked unavailable only on 404 or 410; a 401 or 403 stops the run instead, so an auth glitch
+at Garmin can't write files off.
 
 ### Real-data check
 

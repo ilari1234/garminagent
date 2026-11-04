@@ -48,6 +48,12 @@ Report-only keys in `counts`: `activity_files`, `fit_files`. All counts are inte
 or free text, an upsert, a `RangeDataset` or its own step, tests against the fake server and a schema
 guard entry. A 4xx skips only that dataset for the run.
 
+**Activity file downloads** (ADR 0015): only 404 and 410 mark a file `unavailable`. 401, 403 and 5xx
+stop the run and leave the file untried; other 4xx leave it untried and count as `errors`. A
+download that can't be used (not a zip or FIT, no FIT member, a zip that can't be read) is marked
+`invalid`. An unexpected exception stops the run as `internal_error`; it is recorded, and FIT
+parsing still runs.
+
 **Post-sync steps** run inside the lock and make no Garmin requests. Bad input must not fail the run:
 `parse_pending_fit_files`, the existing one, marks a bad file `invalid` and continues. Only one FIT
 file per activity is used (the first by name); others are marked `skipped`. M6a proposes `analyze` as
@@ -85,10 +91,10 @@ Every command prints JSON on stdout and logs on stderr, with no health values in
 |---|---|
 | 0 | Complete, `budget` or `already_running` |
 | 75 | `rate_limited`: try later |
-| 1 | `garmin_error`, `auth_failed`, `database_error` |
+| 1 | `garmin_error`, `auth_failed`, `database_error`, `internal_error` |
 
 `stopped` values: `null`, `budget`, `rate_limited`, `garmin_error`, `auth_failed`, `database_error`,
-`already_running`. Monitoring and the AWS alarms depend on these names; `already_running` isn't
+`internal_error`, `already_running`. Monitoring and the AWS alarms depend on these names; `already_running` isn't
 recorded in `sync_run`.
 
 ## Configuration

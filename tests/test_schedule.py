@@ -17,6 +17,7 @@ INTERVAL, CATCH_UP = 6 * HOUR, 15 * 60.0
         ("garmin_error", 1, 2 * CATCH_UP),  # exponential backoff...
         ("garmin_error", 3, 8 * CATCH_UP),
         ("database_error", 20, INTERVAL),  # ...capped at the interval
+        ("internal_error", 1, 2 * CATCH_UP),  # unexpected errors back off too
     ],
 )
 def test_next_delay(stopped: str | None, failures: int, expected: float) -> None:
@@ -41,6 +42,27 @@ def test_schedule_runs_waits_and_stops_on_request() -> None:
     assert CATCH_UP <= waits[0] <= CATCH_UP + 300  # jitter is small and only adds time
     assert CATCH_UP <= waits[1] <= CATCH_UP + 300
     assert INTERVAL <= waits[2] <= INTERVAL + 300
+
+
+def test_exception_from_a_run_backs_off_instead_of_ending_the_loop() -> None:
+    calls: list[int] = []
+
+    def run_once() -> str | None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("synthetic failure")
+        return None
+
+    waits: list[float] = []
+
+    def wait(delay: float) -> bool:
+        waits.append(delay)
+        return False
+
+    runs = run_schedule(run_once, wait, interval_s=INTERVAL, catch_up_s=CATCH_UP, max_runs=2)
+
+    assert runs == 2  # the loop kept going
+    assert 2 * CATCH_UP <= waits[0] < 3 * CATCH_UP  # and backed off after the failure
 
 
 def test_failures_back_off_and_reset_after_success() -> None:

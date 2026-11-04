@@ -13,7 +13,7 @@ No code beyond phase 1 is committed.
 
 | Work | Status | Owner session / branch | Depends on | Blocked by |
 |---|---|---|---|---|
-| Phase 1: retrieve and store (M0–M5) | **Reviewed 2026-11-04, not "done"**: one high finding open ([review](docs/reviews/phase1-review.md)) | Review: branch `docs/phase1-review` | | H1 fix (exceptions escape the run and the scheduler), with tests; M1–M4 should follow before phase 2 relies on the data |
+| Phase 1: retrieve and store (M0–M5) | **Reviewed 2026-11-04, not yet "done"**: H1 and M1–M4 fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md)); low findings open ([review](docs/reviews/phase1-review.md)) | `main` | | A short re-check of the fixes by a fresh session or subagent (OPEN_QUESTIONS 34) |
 | Real-data check | **Done** 2026-11-03, including its follow-ups | Owner's terminal | Phase 1 | |
 | Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)); M6a next | Track A session | Phase 1 review; B3a before M6a (code-only, may precede B1) | |
 | AWS plan | **Accepted** 2026-11-03 ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | AWS planning session; branch `docs/aws-deployment` | | Owner's merge |
@@ -37,8 +37,8 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 1. ~~**Owner:** merge the orchestrator and AWS plan PRs.~~ Done (#8, #10).
 2. ~~**Fresh session or subagent:** review phase 1 against `docs/plan.md` and `docs/contracts/`.~~ Done
    2026-11-04 ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md)): 1 high, 4 medium, 11 low.
-   **Track A:** fix H1 with tests in a `fix/` PR (M1–M4 too, ideally). Phase 1 is "done" once H1 is merged
-   and a short re-check confirms it (OPEN_QUESTIONS 34).
+   H1 and M1–M4 are fixed in #19 (ADR 0015). Phase 1 is "done" once a short re-check confirms the fixes
+   (OPEN_QUESTIONS 34).
 3. ~~**Owner, own terminal:** run the real-data check.~~ Done 2026-11-03, with a second run for the follow-ups.
 4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. Set `ANALYTICS_TRIMP_B` in `.env` before M6b.
 5. **Track A:** M6a. **Track B:** B0, B1, B2 (B3a before M6a if the order allows).

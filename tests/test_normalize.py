@@ -82,3 +82,39 @@ def test_invalid_daily_summaries_are_skipped() -> None:
 def test_daily_summaries_unexpected_shape() -> None:
     assert parse_daily_summaries([]).records == []
     assert parse_daily_summaries({"data": "nope"}).records == []
+
+
+def test_out_of_range_daily_values_become_none() -> None:
+    payload = {
+        "data": [
+            {
+                "calendarDate": "2026-10-01",
+                "heartRate": {"restingValue": 0, "minValue": 45, "maxValue": 900},
+                "stress": {"avgLevel": -1, "maxLevel": -2},
+                "bodyBattery": {"minValue": -5, "maxValue": 80, "chargedValue": 120, "endOfDayValue": 101},
+                "movement": {"steps": {"value": -3}},
+            }
+        ]
+    }
+    (day,) = parse_daily_summaries(payload).records
+    assert (day.resting_hr, day.min_hr, day.max_hr) == (None, 45, None)
+    assert (day.stress_avg, day.stress_max) == (None, None)  # Garmin-style -1/-2 "no data" markers
+    assert (day.body_battery_min, day.body_battery_max, day.body_battery_end_of_day) == (None, 80, None)
+    assert day.body_battery_charged == 120  # a daily sum: may pass 100
+    assert day.steps is None
+
+
+def test_out_of_range_activity_values_become_none() -> None:
+    item = {
+        "activityId": 1,
+        "startTimeGMT": "2026-10-01 05:00:00",
+        "averageHR": -1,
+        "maxHR": 300,
+        "duration": -5.0,
+        "distance": 5000.0,
+        "aerobicTrainingEffect": 7.0,
+        "vO2MaxValue": 55.0,
+    }
+    (activity,) = parse_activities([item]).records
+    assert (activity.avg_hr, activity.max_hr, activity.duration_s, activity.aerobic_te) == (None, None, None, None)
+    assert (activity.distance_m, activity.vo2max) == (5000.0, 55.0)
