@@ -7,7 +7,7 @@ must commit the database delete before removing blobs. Nothing here logs payload
 import hashlib
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -205,16 +205,14 @@ def set_cursor(session: Session, athlete_id: int, dataset: str, synced: SyncRang
     session.execute(stmt.on_conflict_do_update(index_elements=["athlete_id", "dataset"], set_=values))
 
 
-def activities_without_file(session: Session, athlete_id: int, limit: int) -> list[int]:
-    """Activities whose file was never tried, newest first (most useful for planning)."""
-    return list(
-        session.scalars(
-            select(Activity.activity_id)
-            .where(Activity.athlete_id == athlete_id, Activity.file_status.is_(None))
-            .order_by(Activity.start_time_utc.desc())
-            .limit(limit)
-        )
-    )
+def activities_without_file(session: Session, athlete_id: int, limit: int, exclude: Collection[int] = ()) -> list[int]:
+    """Activities whose file was never tried, newest first (most useful for planning).
+    `exclude` skips activities already tried this run: a file left untried (another 4xx) stays
+    NULL, and without it a full batch of those would hide every older file."""
+    query = select(Activity.activity_id).where(Activity.athlete_id == athlete_id, Activity.file_status.is_(None))
+    if exclude:
+        query = query.where(Activity.activity_id.not_in(exclude))
+    return list(session.scalars(query.order_by(Activity.start_time_utc.desc()).limit(limit)))
 
 
 def count_activities_without_file(session: Session, athlete_id: int) -> int:

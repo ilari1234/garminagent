@@ -90,6 +90,16 @@ def make_corrupt_zip() -> bytes:
     return bytes(data)
 
 
+def make_zip_with_undecodable_name() -> bytes:
+    """A zip whose member claims a UTF-8 name (flag bit 11) that isn't valid UTF-8, so opening it
+    raises UnicodeDecodeError rather than BadZipFile."""
+    data = bytearray(make_zip({"a.fit": make_fit()}))
+    central = data.rfind(b"PK\x01\x02")
+    data[central + 9] |= 0x08  # general-purpose flags, high byte: bit 11 = names are UTF-8
+    data[central + 46] = 0xFF  # first byte of the name: never valid UTF-8
+    return bytes(data)
+
+
 class FakeTime:
     """Monotonic and wall clock in one; sleeping advances time instantly."""
 

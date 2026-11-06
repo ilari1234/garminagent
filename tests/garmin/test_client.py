@@ -16,7 +16,14 @@ from garminagent.garmin import (
     UnexpectedFileError,
     date_chunks,
 )
-from tests.garmin.fakes import FakeGarmin, load_fixture, make_corrupt_zip, make_fit, make_zip
+from tests.garmin.fakes import (
+    FakeGarmin,
+    load_fixture,
+    make_corrupt_zip,
+    make_fit,
+    make_zip,
+    make_zip_with_undecodable_name,
+)
 
 D = date(2026, 10, 1)
 E = date(2026, 10, 14)
@@ -255,8 +262,9 @@ def test_download_accepts_bare_fit(garmin: FakeGarmin) -> None:
         (make_zip({"42.gpx": b"<gpx/>"}), "no .fit member"),
         (make_zip({"42.fit": b"definitely not fit data"}), "lacks the FIT signature"),
         (make_corrupt_zip(), "can't be read"),
+        (make_zip_with_undecodable_name(), "can't be read"),
     ],
-    ids=["html", "zip-without-fit", "fit-without-signature", "corrupt-zip"],
+    ids=["html", "zip-without-fit", "fit-without-signature", "corrupt-zip", "undecodable-name"],
 )
 def test_download_rejects_unexpected_files(garmin: FakeGarmin, content: bytes, message: str) -> None:
     garmin.reply("GET", FILE_PATH, httpx.Response(200, content=content))

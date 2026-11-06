@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 
 from garminagent.config import Settings
 from garminagent.fit import PARSER_VERSION
@@ -103,6 +104,7 @@ def run_sync_once(
         # Outside what Syncer.run already catches (e.g. building the client): fail this run with
         # a code, never a traceback. Class name only: the message may quote data.
         log.error("sync failed: unexpected error %s", exc.__class__.__name__)
+        _record_failed_run(sessions, started_at, INTERNAL_ERROR)
         return RunOutcome(INTERNAL_ERROR, None, EXIT_ERROR)
     finally:
         engine.dispose()
@@ -113,6 +115,25 @@ def run_sync_once(
     else:
         code = EXIT_OK
     return RunOutcome(report.stopped, report, code)
+
+
+def _record_failed_run(sessions: sessionmaker[Session], started_at: datetime, stopped: str) -> None:
+    """Record a run that failed outside the sync itself, so `status` and the health check see it
+    instead of the last good run. Best effort: if the database is what failed, there is nowhere
+    to record it."""
+    try:
+        with sessions.begin() as session:
+            record_sync_run(
+                session,
+                ensure_athlete(session),
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stopped=stopped,
+                requests=0,
+                counts={},
+            )
+    except SQLAlchemyError as exc:
+        log.error("could not record the failed run: database error %s", exc.__class__.__name__)
 
 
 def next_delay_s(stopped: str | None, consecutive_failures: int, interval_s: float, catch_up_s: float) -> float:

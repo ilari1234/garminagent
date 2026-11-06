@@ -51,6 +51,7 @@ def parse_activity_file(activity_id: int, content: bytes) -> ActivityFile:
         NotImplementedError,
         EOFError,
         OSError,
+        ValueError,  # e.g. UnicodeDecodeError: the UTF-8 name flag set on a name that isn't UTF-8
         zlib.error,
     ) as exc:
         raise UnexpectedFileError(f"activity {activity_id}: zip can't be read", "corrupt_zip") from exc

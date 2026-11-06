@@ -107,18 +107,8 @@ ADR 0007 sets principles only.
     practice is unknown.
 34. **Phase 1 review findings** ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md),
     2026-11-04). H1 and M1–M4 are fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md))
-    and re-checked; phase 1 is done. Still open, all low: L1–L11 from the review, and three from the
-    re-check, worth fixing before phase 2 relies on activity files:
-    - **N1:** 50 or more downloads that keep answering another 4xx fill the newest-first batch, so the
-      download loop ends early and older files are never tried, while the run reports complete
-      (`sync.py` `_sync_activity_files`; query past files already tried this run).
-    - **N2:** a zip with the UTF-8 name flag and an invalid name raises `UnicodeDecodeError`, which
-      isn't in `files.py`'s corrupt-zip tuple; the run ends as `internal_error` at that file every
-      run (add `ValueError`).
-    - **N3:** an `internal_error` raised outside `Syncer.run` (e.g. in FIT parsing or building the
-      client) isn't written to `sync_run`, so `status` keeps showing the last good run until the
-      13-hour limit (record it in `run_sync_once`, as the review suggested).
-    Owner: track A.
+    and re-checked; phase 1 is done. The re-check's N1–N3 are fixed in #21. Still open, all low:
+    L1–L11 from the review. Owner: track A.
 35. **Does the Personal API send sentinel values** (−1 or −2 for stress, 0 for HR) in daily summaries
     or activities? Since #19 they become NULL at parsing either way; rows stored earlier keep them
     until re-normalized (M6a's `renormalize`). Counting out-of-range values in the real-data check

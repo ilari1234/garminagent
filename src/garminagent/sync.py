@@ -207,7 +207,16 @@ class Syncer:
             log.error("stopping after unexpected error: %s", exc.__class__.__name__)
             self._report.stopped = INTERNAL_ERROR
         self._report.requests = self._client.requests_made
-        parse_pending_fit_files(self._sessions, self._blobs, athlete, self._report)
+        try:
+            parse_pending_fit_files(self._sessions, self._blobs, athlete, self._report)
+        except SQLAlchemyError:
+            raise
+        except Exception as exc:
+            # E.g. the blob store refusing a read. Keep the counts so far and record the run as
+            # failed, unless it already stopped for a reason that needs attention.
+            log.error("FIT parsing stopped after unexpected error: %s", exc.__class__.__name__)
+            if self._report.stopped in (None, "budget"):
+                self._report.stopped = INTERNAL_ERROR
         log.info(
             "sync %s after %d requests: %s",
             "complete" if self._report.complete else f"stopped ({self._report.stopped})",
@@ -350,7 +359,7 @@ class Syncer:
         tried: set[int] = set()
         while True:
             with self._sessions() as session:
-                pending = [a for a in activities_without_file(session, athlete, FILE_BATCH) if a not in tried]
+                pending = activities_without_file(session, athlete, FILE_BATCH, exclude=tried)
             if not pending:
                 return
             for activity_id in pending:

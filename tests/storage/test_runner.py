@@ -104,6 +104,8 @@ def test_unexpected_error_fails_the_run_with_a_code(
     outcome = run_sync_once(settings)
 
     assert (outcome.stopped, outcome.exit_code) == (INTERNAL_ERROR, EXIT_ERROR)
+    (run,) = runs(app_sessions)  # recorded, so status shows the failure, not the last good run
+    assert (run.stopped, run.requests, run.counts) == (INTERNAL_ERROR, 0, {})
 
 
 def test_status_and_health(settings: Settings, fake_garmin: FakeGarmin, app_sessions: sessionmaker[Session]) -> None:
