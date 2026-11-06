@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
+from garminagent import sync
 from garminagent.cli import app
 from garminagent.config import MIN_SYNC_REQUESTS, Settings
 from garminagent.garmin import GarminClient, UnexpectedFileError
@@ -302,6 +303,41 @@ def test_other_refusal_on_a_download_leaves_it_for_the_next_run(
     assert report.counts["activity_files"]["errors"] == 31
     assert file_statuses(app_sessions) == {None: 31}
     assert downloads(garmin) == 31  # once each per run
+
+
+def test_files_left_untried_do_not_hide_older_files(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync, "FILE_BATCH", 5)  # fewer than the 31 activities
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != DOWNLOAD_PATTERN]
+    garmin.route("GET", DOWNLOAD_PATTERN, lambda request: httpx.Response(400))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert downloads(garmin) == 31  # every file tried once, not just the newest batch
+
+
+def test_unexpected_error_in_fit_parsing_keeps_counts_and_fails_the_run(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(*args: object) -> None:
+        raise PermissionError("synthetic failure")
+
+    monkeypatch.setattr(sync, "parse_pending_fit_files", broken)
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.stopped == "internal_error"
+    assert report.counts["activity_files"]["stored"] == 29  # the sync part's counts are kept
 
 
 def test_unexpected_exception_stops_the_run_as_internal_error(

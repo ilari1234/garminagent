@@ -38,7 +38,7 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 2. ~~**Fresh session or subagent:** review phase 1 against `docs/plan.md` and `docs/contracts/`.~~ Done
    2026-11-04 ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md)): 1 high, 4 medium, 11 low.
    H1 and M1–M4 are fixed in #19 (ADR 0015) and a fresh subagent's re-check confirmed them: **phase 1 is
-   done.** Low findings L1–L11 and N1–N3 stay open (OPEN_QUESTIONS 34).
+   done.** The re-check's N1–N3 are fixed in #21; low findings L1–L11 stay open (OPEN_QUESTIONS 34).
 3. ~~**Owner, own terminal:** run the real-data check.~~ Done 2026-11-03, with a second run for the follow-ups.
 4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. Set `ANALYTICS_TRIMP_B` in `.env` before M6b.
 5. **Track A:** M6a. **Track B:** B0, B1, B2 (B3a before M6a if the order allows).
@@ -51,7 +51,7 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 - **Schema:** migrations 0001–0005. Next is 0006, owned by track A.
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
 - **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR, CodeQL.
-- **Merged PRs:** #2–#19 (#9 closed in favour of #14). Dependabot's #1 was closed.
+- **Merged PRs:** #2–#21 (#9 closed in favour of #14). Dependabot's #1 was closed.
 - **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
   `docs/garmin-personal-api/openapi.json`.
 

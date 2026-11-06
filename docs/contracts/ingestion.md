@@ -51,10 +51,11 @@ guard entry. A 4xx skips only that dataset for the run.
 **Activity file downloads** (ADR 0015): only 404 and 410 mark a file `unavailable`. 401, 403 and 5xx
 stop the run and leave the file untried; other 4xx leave it untried and count as `errors`. A
 download that can't be used (not a zip or FIT, no FIT member, a zip that can't be read) is marked
-`invalid`. An unexpected exception in the Garmin part of the run stops it as `internal_error`; it
-is recorded, and FIT parsing still runs. One raised outside that part (FIT parsing, building the
-client) also ends the run as `internal_error` with exit code 1, but isn't recorded in `sync_run` yet
-(OPEN_QUESTIONS 34, N3).
+`invalid`. An unexpected exception in the Garmin part of the run stops it as `internal_error` and
+FIT parsing still runs; one in FIT parsing keeps the run's counts and marks it `internal_error`
+unless it had already stopped for another failure. One raised before the sync starts (building the
+client) is recorded as an `internal_error` run with no requests or counts. Each ends with exit code
+1 and shows in `status`.
 
 **Post-sync steps** run inside the lock and make no Garmin requests. Bad input must not fail the run:
 `parse_pending_fit_files`, the existing one, marks a bad file `invalid` and continues. Only one FIT
