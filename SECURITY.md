@@ -39,6 +39,9 @@ send, or depend on.
 | Broken or unchecked change reaches `main` | Ruleset: PR required, all CI checks and CodeQL must pass on an up-to-date branch, no direct or force pushes, no bypass | GitHub ruleset |
 | Vulnerable OS packages in the image | Trivy scan gates the image push (fixable HIGH/CRITICAL) | CI `scan` job |
 | Personal data in the repo or chat | Synthetic fixtures only; Claude Code denied `.env*` and `data/**` | tests, `.claude/settings.json`, CLAUDE.md |
+| AWS account details (account IDs, ARNs, endpoints) published through Terraform files or public CI logs | State, plans, real tfvars and `backend.hcl` gitignored and dockerignored; infra CI has no AWS credentials, no `id-token` and never runs `plan` or touches state; plans shared only as `plan_summary.py` output (addresses and actions, tested never to print values); Claude Code denied reading those files, `~/.aws` and running `terraform` apply/plan/state commands (command-text rules: a backstop, not a boundary) | `.gitignore`, `infra.yml`, `infra/scripts/plan_summary.py`, `.claude/settings.json` |
+| Terraform changes something outside the EU or in the wrong account | Provider region fixed to `eu-north-1` and checked by a custom Trivy check (any non-EU or implicit region fails CI; the check self-tests on each run); `allowed_account_ids` in every root; account IDs validated | `infra/*/providers.tf`, `infra/policy/`, `infra.yml` |
+| Compromised Terraform provider or lint plugin | Exact provider version; `.terraform.lock.hcl` with hashes for three platforms, CI `init -lockfile=readonly`; no third-party modules; Terraform and TFLint from digest-pinned images; TFLint AWS ruleset installed by SHA-256 pinned after verifying its release attestation | `infra/`, `infra.yml` |
 | Malicious activity file (zip bomb, wrong format, corrupt member) | Size cap, FIT signature check; a zip that can't be read is marked `invalid` (`corrupt_zip`), never retried in a loop | `garmin/files.py`, `sync.py` |
 | Malformed or hostile FIT content | Garmin's maintained SDK decodes; size (64 MiB) and record (400k) caps; integrity/CRC check before reading; only known numeric fields taken, developer fields and text ignored; out-of-range values become NULL; failures marked `invalid` with a fixed reason code, never retried in a loop | `fit.py`, `sync.py` |
 | Path traversal via zip member names | Blob keys built from IDs and SHA-256 only; keys validated (no `.`/`..`/absolute/backslash) and resolved inside the store root; member names stored as data | `storage/blobs.py`, `storage/repository.py` |
@@ -107,10 +110,13 @@ send, or depend on.
 | zizmor (online) over workflows and Dependabot config | every push/PR, weekly | any finding |
 | cosign signature check of the Trivy image (exact signer identity) | every push/PR, before the scan | missing or wrong signature |
 | Trivy image scan (vulnerabilities + secrets) | every push/PR | fixable HIGH/CRITICAL, any secret |
+| `terraform fmt -check`, `init -backend=false -lockfile=readonly`, `validate`, `test` (mocked provider) per root (`infra-terraform`) | every push/PR | unformatted file, provider hash not in the lock file, invalid config, failing test |
+| TFLint with the bundled Terraform rules (recommended preset) and the hash-pinned AWS ruleset (`infra-tflint`) | every push/PR | any warning or error; ruleset hash mismatch |
+| Trivy config scan of `infra/` with embedded checks and custom check GA001 (EU Regions), after cosign verifies the image (`infra-trivy`) | every push/PR | any misconfiguration; GA001 self-test not failing on a non-EU provider |
 | GitGuardian | PRs | detected secret |
 | GitHub secret scanning with push protection | every push | push containing a known secret pattern is rejected |
 | CodeQL (Python and Actions workflows) | PRs, weekly | high or higher security alerts (required by the ruleset) |
-| Dependabot (actions, Docker, compose; uv once Python 3.15 is supported) | weekly | — (opens PRs) |
+| Dependabot (actions, Docker, compose, Terraform providers in `infra/*`; uv once Python 3.15 is supported) | weekly | — (opens PRs) |
 
 The image is pushed to GHCR only when lint, tests, audit and scan pass.
 
@@ -119,7 +125,7 @@ The image is pushed to GHCR only when lint, tests, audit and scan pass.
 | When | What |
 |---|---|
 | Weekly | Read the audit results and Dependabot PRs. Image bumps: Dependabot's Docker updater ignored the cooldown once (uv 0.13.5) — check release age. uv image bumps also need `required-version` and `uv_build` in the same PR. |
-| Monthly | `uv lock --upgrade` and a PR (Dependabot can't update Python packages until it supports Python 3.15). Bump the Trivy and cosign images in ci.yml (Dependabot doesn't track them): check Aqua's advisories, take a release ≥7 days old unless it's a security fix, update `TRIVY_IMAGE` digest **and** the tag in `TRIVY_SIGNER`, and run the verify command locally first. |
+| Monthly | `uv lock --upgrade` and a PR (Dependabot can't update Python packages until it supports Python 3.15). Bump the Trivy and cosign images in ci.yml (Dependabot doesn't track them): check Aqua's advisories, take a release ≥7 days old unless it's a security fix, update `TRIVY_IMAGE` digest **and** the tag in `TRIVY_SIGNER`, and run the verify command locally first. The same Trivy and cosign pins are in `infra.yml`: bump both workflows together. Bump the Terraform and TFLint image digests and the TFLint AWS ruleset (`RULESET_URL` and `RULESET_SHA256`, after `gh attestation verify`) in `infra.yml` the same way; steps in `infra/README.md`. |
 | Every 90 days | Create a new Garmin key (90-day expiry), update `.env`, delete the old key (steps: docs/operations.md, key rotation). Reread this file and the threat model. Confirm the GHCR image is still private (`garmin-fit-sdk` license). |
 | On each new GitHub setting or integration | Least privilege; note it here. |
 
@@ -138,7 +144,8 @@ Releases newer than the 7-day cooldown, taken deliberately. Add a row for every 
 **Repository settings (owner):** the repo is public. Ruleset `prevent-push-to-main` on the
 default branch, no bypass: no deletion, no force push, linear history, PR required (0
 approvals, conversations resolved, squash only), status checks `lint`, `test`,
-`audit / pip-audit`, `audit / zizmor`, `scan`, `image` required and up to date, CodeQL
+`audit / pip-audit`, `audit / zizmor`, `scan`, `image` required and up to date (to add after
+B0's first green run: `infra-terraform`, `infra-tflint`, `infra-trivy`), CodeQL
 results required. Code security: Dependabot alerts and security updates, secret scanning with
 push protection, CodeQL default setup, private vulnerability reporting. GitHub's dependency
 graph can't process `uv.lock` with Python 3.15 yet (same limitation as Dependabot's uv
@@ -149,6 +156,8 @@ updates). Review these settings with the 90-day routine; changing them is outsid
 | Component | License | Constraint we follow |
 |---|---|---|
 | `garmin-fit-sdk` (FIT decoding) | Garmin *FIT Protocol License Agreement* (not OSI) | Use only, for our own purposes. **Never distribute it**: it is installed from PyPI, not vendored, and the **GHCR image, which contains it, must stay private**. Don't modify it (modifications are licensed back to Garmin). Don't put the repo under a copyleft license (GPL/AGPL) that would require disclosing it. Garmin may terminate with 30 days' notice, so it sits behind `fit.parse_fit` and can be swapped for `fitdecode` (MIT). Its "no safety-critical use" clause: plans are advisory, approved by the owner, with safety limits in code. |
+| Terraform CLI (infra tooling) | BUSL 1.1 (not OSI) | Used only to manage our own AWS accounts; never offered to others as a hosted or embedded Terraform service. Not vendored: run from HashiCorp's image. Switching to OpenTofu (MPL-2.0) stays about one PR (ADR 0008). |
+| AWS provider, TFLint, TFLint AWS ruleset | MPL-2.0 | None for our use: not modified or redistributed. |
 
 ## Incident playbook
 

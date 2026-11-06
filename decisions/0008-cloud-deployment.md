@@ -3,7 +3,8 @@
 **Status:** Accepted. Direction: AWS, Terraform, local until then, staged (owner, 2026-10-24 and
 2026-10-29). Design: produced by the AWS planning session on 2026-11-01, accepted by the owner on
 2026-11-03 with the defaults below. Detail: [docs/aws-deployment.md](../docs/aws-deployment.md).
-Vendor facts and prices are as of 2026-11-01.
+Vendor facts and prices are as of 2026-11-01. B0 implemented on branch `infra-b0` (2026-11-03): see
+*B0 implementation* below.
 
 ## Context
 
@@ -54,6 +55,32 @@ reads both. No mantle projects are used. Fallback: Opus 4.8 on `bedrock-mantle` 
 taking the name from M6f's `garminagent.storage` module and the password from a third URL secret,
 `AGENT_DATABASE_URL` (+$0.40/month).
 
+**B0 implementation (2026-11-03, versions bumped 2026-11-06).** Release dates rechecked with
+`gh api` on 2026-11-06.
+
+- **Versions.** Terraform 1.17.1 (`required_version = "~> 1.17.0"`), `hashicorp/aws` exactly 6.71.0
+  (6.72.0 is under 7 days old), TFLint 0.65.0, TFLint AWS ruleset 0.50.0. No cooldown exception
+  was needed.
+- **TFLint AWS ruleset: pinned, so not core-only** (OPEN_QUESTIONS 9). `gh attestation verify`
+  showed the release's `checksums.txt` was signed by the ruleset repo's `release.yml` at tag
+  v0.50.0. CI downloads the Linux zip and checks the SHA-256 from that file, instead of
+  `tflint --init`, which verifies the attestation but pins no hash and needs a GitHub token.
+  `deep_check` (AWS API calls) is off.
+- **Trivy custom checks.** Built-in checks already cover public RDS and open inbound rules, so B0
+  adds only GA001: every `aws` provider sets an explicit `eu-*` region (Rego in `infra/policy/`,
+  run through `--raw-config-scanners terraform`). CI self-tests it against a non-EU provider each
+  run. `--skip-check-update` uses the checks embedded in the pinned image rather than downloading
+  the latest bundle, so check changes arrive with Trivy bumps.
+- **Account guard.** Every root sets `allowed_account_ids` from a validated `account_id` variable;
+  the example tfvars placeholder fails validation if left unfilled.
+- **Script name.** `infra/scripts/plan_summary.py` (not `plan-summary`) so ruff, pyright strict and
+  pytest cover it; standard library only.
+- **State bootstrap.** `org` and `account` start on local state through a gitignored
+  `backend_override.tf` and migrate to their bucket in B1.
+- **Claude deny rules.** Reading state, plans, tfvars, `backend.hcl` and `~/.aws`; running
+  `terraform` apply, destroy, plan, refresh, state, show, output, console, import and
+  force-unlock. They match command text, so they back up the rule rather than enforce it.
+
 ## Alternatives considered
 
 - **OpenTofu.** MPL-2.0 and built-in state encryption. Not chosen: the owner asked for Terraform,
@@ -78,7 +105,8 @@ taking the name from M6f's `garminagent.storage` module and the password from a 
   and verifies it, before any prompt is sent.
 - Track B needs small edits outside `infra/`: workflows, Dependabot, `.gitignore`,
   `.claude/settings.json` (B0); app code, Dockerfile, `pyproject.toml`, `uv.lock` (B3b); `ci.yml`
-  (B3c). B3a should land before M6a touches the code next to it, and B3b rebases after any open M6 PR.
+  (B3c). B3a, code only, may land before B1 (owner, 2026-11-03), and should land before M6a touches
+  the code next to it, and B3b rebases after any open M6 PR.
 - M6f's agent role must also be created by `db-bootstrap` (ADR 0013).
 - Purged rows stay in RDS backups until they age out; SECURITY.md must state this.
 - Two opt-in Regions are enabled solely to pin their retention setting; the Region SCP keeps them

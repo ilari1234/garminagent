@@ -1,0 +1,139 @@
+name: Infra
+
+# Credential-free checks of infra/ (ADR 0008). The repo is public, so these logs are public:
+# no AWS credentials, no id-token, no `terraform plan` and no state access, ever. Plans are run
+# by the owner in their terminal and shared through infra/scripts/plan_summary.py.
+#
+# Runs on every PR and push to main with no path filter: a required check that is skipped
+# blocks merging.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: true
+
+# Tools run from digest-pinned images, not setup actions. Dependabot doesn't track these
+# images (they aren't in a Dockerfile or compose file): bump them with the monthly routine in
+# SECURITY.md, taking releases at least 7 days old.
+env:
+  TERRAFORM_IMAGE: hashicorp/terraform:1.17.1@sha256:a5d5a5a892c98f60fcbfa81eac2a40fc19e7b3fa7719bccae10ff6111d22524a
+
+jobs:
+  terraform:
+    name: infra-terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Format
+        run: >-
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges -e CHECKPOINT_DISABLE=1
+          -v "$PWD/infra:/infra:ro" -w /infra
+          "$TERRAFORM_IMAGE" fmt -check -recursive -diff
+      # init downloads the AWS provider and refuses any build whose hash isn't in the
+      # committed .terraform.lock.hcl (-lockfile=readonly). No backend: nothing reaches AWS.
+      # One plugin cache serves all three roots.
+      - name: Init, validate and test each root
+        run: |
+          mkdir -p "$RUNNER_TEMP/plugin-cache"
+          # CHECKPOINT_DISABLE: no call to HashiCorp's version-check service.
+          tf() {
+            docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+              --user "$(id -u):$(id -g)" \
+              -e CHECKPOINT_DISABLE=1 -e TF_IN_AUTOMATION=1 -e TF_INPUT=0 \
+              -e TF_PLUGIN_CACHE_DIR=/plugin-cache -v "$RUNNER_TEMP/plugin-cache:/plugin-cache" \
+              -v "$PWD/infra:/infra" -w "/infra/$root" \
+              "$TERRAFORM_IMAGE" "$@"
+          }
+          for root in org account workload; do
+            echo "::group::$root"
+            tf init -backend=false -lockfile=readonly -input=false
+            tf validate
+            # Mocked provider (mock_provider in tests/*.tftest.hcl): no credentials, no API calls.
+            tf test
+            echo "::endgroup::"
+          done
+
+  tflint:
+    name: infra-tflint
+    runs-on: ubuntu-latest
+    env:
+      TFLINT_IMAGE: ghcr.io/terraform-linters/tflint:v0.65.0@sha256:2788f4d4fc663c0e953b011b01bf443fe5bfce7587ee916e588e6057b85d6359
+      # The AWS ruleset is installed by hash rather than by `tflint --init` (which pins no
+      # hash and needs a GitHub token). The hash is the release's checksums.txt entry, after
+      # `gh attestation verify` showed checksums.txt was signed by
+      # terraform-linters/tflint-ruleset-aws/.github/workflows/release.yml@refs/tags/v0.50.0.
+      # When bumping: verify the same way, then update the version and the hash together.
+      RULESET_URL: https://github.com/terraform-linters/tflint-ruleset-aws/releases/download/v0.50.0/tflint-ruleset-aws_linux_amd64.zip
+      RULESET_SHA256: cdd433fdbc0929e7b9f9709dd9e72237fdfe1fc235674445c284b1e4b94a5c26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the AWS ruleset (hash-pinned)
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            -o "$RUNNER_TEMP/ruleset.zip" "$RULESET_URL"
+          echo "$RULESET_SHA256  $RUNNER_TEMP/ruleset.zip" | sha256sum --check --strict
+          mkdir -p "$RUNNER_TEMP/tflint-plugins"
+          unzip -o "$RUNNER_TEMP/ruleset.zip" tflint-ruleset-aws -d "$RUNNER_TEMP/tflint-plugins"
+          chmod 0555 "$RUNNER_TEMP/tflint-plugins/tflint-ruleset-aws"
+      - name: TFLint
+        run: >-
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges
+          -v "$PWD/infra:/infra:ro" -v "$RUNNER_TEMP/tflint-plugins:/plugins:ro"
+          -e TFLINT_PLUGIN_DIR=/plugins -w /infra
+          "$TFLINT_IMAGE" --recursive --config /infra/.tflint.hcl --format compact
+
+  trivy:
+    # Same Trivy and cosign images as ci.yml's scan job; bump both workflows together.
+    # This job holds no secrets, and the scanner container gets only infra/, read-only.
+    name: infra-trivy
+    runs-on: ubuntu-latest
+    env:
+      TRIVY_IMAGE: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+      TRIVY_SIGNER: https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v0.76.1
+      # v3.1.4 despite the 7-day cooldown: see ci.yml and SECURITY.md's cooldown exceptions.
+      COSIGN_IMAGE: ghcr.io/sigstore/cosign/cosign:v3.1.4@sha256:0f06154836d2de34f887a5c273506d52ca43edaa1d9e53e6510fa78a48f69c2d
+      # --skip-check-update uses the checks embedded in the pinned binary instead of
+      # downloading the latest bundle; Trivy logs "Falling back to embedded checks" as an
+      # error, which is expected. --raw-config-scanners feeds infra/policy's custom checks.
+      TRIVY_ARGS: >-
+        --misconfig-scanners terraform --raw-config-scanners terraform
+        --config-check /checks --check-namespaces user
+        --skip-check-update --disable-telemetry --skip-version-check --exit-code 1
+    steps:
+      - name: Verify the Trivy image signature
+        run: >-
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges
+          "$COSIGN_IMAGE" verify "$TRIVY_IMAGE"
+          --certificate-identity "$TRIVY_SIGNER"
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Proves the custom checks load and fire: a provider outside the EU must fail the scan.
+      - name: Self-test the custom checks
+        run: |
+          mkdir -p "$RUNNER_TEMP/bad-region"
+          printf 'provider "aws" {\n  region = "us-east-1"\n}\n' > "$RUNNER_TEMP/bad-region/main.tf"
+          set +e
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            -v "$RUNNER_TEMP/bad-region:/scan:ro" -v "$PWD/infra/policy:/checks:ro" \
+            "$TRIVY_IMAGE" config /scan $TRIVY_ARGS --format json --quiet > "$RUNNER_TEMP/self-test.json"
+          status=$?
+          set -e
+          test "$status" -eq 1
+          grep -q '"ID": "GA001"' "$RUNNER_TEMP/self-test.json"
+      - name: Trivy config scan of infra/
+        run: >-
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges
+          -v "$PWD/infra:/scan:ro" -v "$PWD/infra/policy:/checks:ro"
+          "$TRIVY_IMAGE" config /scan $TRIVY_ARGS

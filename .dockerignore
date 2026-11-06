@@ -13,3 +13,6 @@ data/
 docs/
 spikes/
 tests/
+
+# Terraform: state, plans, tfvars and provider binaries must never reach an image.
+infra/

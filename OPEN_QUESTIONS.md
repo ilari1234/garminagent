@@ -48,8 +48,8 @@ Reported by the AWS planning session, 2026-11-01. Recheck; vendor facts change.
 9. **Smaller checks at implementation:** the OIDC subject (this repo uses the newer format with IDs;
    confirm from GitHub's API before B3c, not from token claims in public logs); the action and
    condition for denying long-lived Bedrock API keys (B2); whether `id-token` is blocked on fork PRs
-   (low priority: the environment rule covers it); whether TFLint's AWS ruleset can be pinned (B0,
-   otherwise core rules only); prices (B3c).
+   (low priority: the environment rule covers it); prices (B3c). *Resolved in B0:* TFLint's AWS
+   ruleset is pinned by hash after verifying its release attestation (ADR 0008).
 
 ## Phase 3 design (not started)
 

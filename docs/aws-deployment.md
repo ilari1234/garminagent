@@ -22,7 +22,8 @@ the owner's, in the owner's terminal.
 | **B3d compute and cutover** | ECS tasks, schedules, alerts, operations guide | `workload` |
 
 **Order.** B1 before B2. B2 works without B3: phase 3 can call Bedrock from the owner's machine while
-the data stays local. B3 needs B1. B3a lands before M6a changes the code next to it; B3b rebases after
+the data stays local. B3b–d need B1. B3a is code only and may land before B1 (owner, 2026-11-03); it
+lands before M6a changes the code next to it; B3b rebases after
 any open M6 PR. B3c waits for the real-data check (sample volume decides the database class) and the
 orderability check below.
 
@@ -261,7 +262,8 @@ M6 PRs also touch; it rebases after them.
 infra/org/       management account: organization, OU, SCPs, SSO, budgets, trail, own state bucket
 infra/account/   member account: state bucket, KMS key, OIDC provider and role, Access Analyzer
 infra/workload/  member account: VPC, RDS, S3, ECR, secrets, ECS, schedules, alarms
-infra/scripts/   bedrock-retention, plan-summary
+infra/scripts/   bedrock-retention (B2), plan_summary.py
+infra/policy/    custom Trivy checks
 ```
 
 - **State:** S3 backend with [`use_lockfile = true`](https://developer.hashicorp.com/terraform/language/backend/s3)
@@ -289,8 +291,9 @@ The repo is public, so CI logs are public (ADR 0010).
 
 - **No `plan` in CI**, not even read-only: plan output contains ARNs, account IDs and endpoints. This
   gives up automatic plan previews on PRs.
-- **Review flow:** the owner runs `plan -out`, then `infra/scripts/plan-summary` prints only resource
-  addresses and actions, which are safe to share. The owner applies that saved plan.
+- **Review flow:** the owner runs `plan -out`, then `infra/scripts/plan_summary.py` prints only resource
+  addresses and actions, which are safe to share. The owner applies that saved plan. Steps:
+  [infra/README.md](../infra/README.md).
 - The infra jobs run on every PR, not behind a path filter, because a skipped required check would
   block merging.
 - Claude Code is denied reading state, plan and tfvars files, and running `terraform apply` (B0, in
@@ -313,10 +316,11 @@ are avoided.
 - **AWS provider** at an exact version (MPL-2.0; 6.70.0 qualified on 2026-11-01). `.terraform.lock.hcl`
   committed per root with hashes for Linux, Windows and macOS (`terraform providers lock`).
 - **Trivy** config scan from the existing digest-pinned, cosign-verified image
-  ([Terraform coverage](https://trivy.dev/docs/latest/guide/coverage/iac/terraform/)). Custom Rego
-  checks: no public RDS, no open inbound rules, EU Regions only. Confirm the custom-check setup in B0.
-- **TFLint** (MPL-2.0) from a digest-pinned image. Its AWS ruleset only if it can be pinned to a
-  verified artifact; otherwise core rules only.
+  ([Terraform coverage](https://trivy.dev/docs/latest/guide/coverage/iac/terraform/)). Built-in checks
+  cover public RDS and open inbound rules; custom check GA001 (B0) requires an explicit EU region on
+  every `aws` provider.
+- **TFLint** (MPL-2.0) from a digest-pinned image, with the AWS ruleset installed by a SHA-256 taken
+  after verifying its release attestation (B0; ADR 0008).
 - **Actions** pinned by SHA. The only new one is `aws-actions/configure-aws-credentials`.
 - **Dependabot** `terraform` ecosystem with the 7-day cooldown, for the three roots.
 
