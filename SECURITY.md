@@ -133,6 +133,7 @@ Releases newer than the 7-day cooldown, taken deliberately. Add a row for every 
 | 2026-10-25 | certifi (via `uv.lock`) | 2026.10.23 | Removes emSign ECC Root CA - G3 (eMudhra incident). |
 | 2026-10-25 | Trivy image | 0.76.1 | Security release for the eMudhra CA incident (Go 1.27.3, updated CA store). |
 | 2026-10-25 | cosign image | 3.1.4 | Its CA store drops emSign ECC Root CA - G3; 3.1.3 still trusted it (not stated in the release notes; checked in the image). |
+| 2026-11-06 | `python:3.15-slim` base image | digest `e97b88e4…`, built 2026-11-05 (Debian 13.7, apt 3.0.4, Python 3.15.2) | CVE-2026-109518 in apt 3.0.3 (package verification bypass on install; fixed in trixie-security 3.0.4) failed the Trivy gate. The app never runs apt; the fix is taken so the gate stays meaningful. |
 
 **Repository settings (owner):** the repo is public. Ruleset `prevent-push-to-main` on the
 default branch, no bypass: no deletion, no force push, linear history, PR required (0
