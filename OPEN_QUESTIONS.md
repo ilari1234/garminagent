@@ -111,11 +111,22 @@ ADR 0007 sets principles only.
     L1–L11 from the review. Owner: track A.
 35. **Does the Personal API send sentinel values** (−1 or −2 for stress, 0 for HR) in daily summaries
     or activities? Since #19 they become NULL at parsing either way; rows stored earlier keep them
-    until re-normalized (M6a's `renormalize`). Counting out-of-range values in the real-data check
-    would show whether that matters.
+    until re-normalized: `garminagent renormalize <dataset>` (M6a) rewrites them. Counting out-of-range
+    values in the real-data check would show whether that matters.
 36. **Activities deleted or merged at Garmin** are never removed locally; sync only upserts. Decide
     before M6b and M6c whether to reconcile, for example by flagging activities missing from a
     refetched range, since phantom activities would inflate load.
 37. **Migration owner role locally.** Since #19 the owner password no longer reaches the app
     containers (compose blanks it, ADR 0015), but the owner role is still the Postgres superuser.
     Decide whether to also create a non-superuser schema owner in `docker/postgres/init`.
+38. **M6a's unverified Garmin semantics**, to check with the owner's first `renormalize activities`
+    and `analyze` on real data, before M6b relies on them (counts only):
+    - `getlactateThresholdSpeed` is converted from the spec's cm/ms to m/s. If it actually arrives in
+      m/s, every value lands outside 0.5–10 m/s and becomes NULL: `threshold_speed` rows would be 0.
+    - `intensityFactor` is read as the spec's fraction (0.80); a percentage would become NULL.
+    - `lactateThresholdBpm` and `maxFtp` on an activity may be the profile value at the time rather
+      than something measured in it. Either way they are change points in the timeline; LTHR counts
+      for the activity's own sport group, FTP only from rides, threshold speed only from runs.
+    - HR zones are requested with `generateDefaults=false`, so only configured zones come back. If
+      the owner's account answers with an empty list, Garmin zones contribute nothing and thresholds
+      fall back to activity values (`hr_zones.records` = 0 in the sync counts).

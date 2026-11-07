@@ -7,8 +7,8 @@ must commit the database delete before removing blobs. Nothing here logs payload
 import hashlib
 import json
 import logging
-from collections.abc import Collection, Sequence
-from dataclasses import asdict, dataclass
+from collections.abc import Collection, Iterator, Sequence
+from dataclasses import asdict, dataclass, fields
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -19,7 +19,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from garminagent.fit import ParsedFit
 from garminagent.garmin import ActivityFile as DownloadedFile
 from garminagent.garmin.files import is_fit
-from garminagent.normalize import ActivityRecord, DailySummaryRecord, HrvRecord, SleepRecord, WeightRecord
+from garminagent.normalize import (
+    ActivityRecord,
+    DailySummaryRecord,
+    HrvRecord,
+    HrZonesRecord,
+    SleepRecord,
+    WeightRecord,
+)
 from garminagent.storage.blobs import BlobStore
 from garminagent.storage.models import (
     Activity,
@@ -27,6 +34,8 @@ from garminagent.storage.models import (
     ActivityLap,
     ActivitySample,
     Athlete,
+    AthleteThreshold,
+    AthleteZones,
     Base,
     DailySummary,
     HrvSummary,
@@ -175,6 +184,67 @@ def _upsert(
     updates = {c: stmt.excluded[c] for c in rows[0] if c not in key_columns}
     session.execute(stmt.on_conflict_do_update(index_elements=key_columns, set_={**updates, "updated_at": func.now()}))
     return len(rows)
+
+
+def save_hr_zones(
+    session: Session, athlete_id: int, records: Sequence[HrZonesRecord], raw_payload_id: int | None, day: date
+) -> int:
+    """Keep HR zones as history: per sport, add a row valid from `day` only when a value differs
+    from the latest row; a second change on the same day replaces that day's row. Returns the
+    number of sports whose zones changed (a first sighting counts as a change)."""
+    changed = 0
+    values = [f.name for f in fields(HrZonesRecord) if f.name != "sport"]
+    for record in records:
+        latest = session.scalar(
+            select(AthleteZones)
+            .where(AthleteZones.athlete_id == athlete_id, AthleteZones.sport == record.sport)
+            .order_by(AthleteZones.valid_from.desc())
+            .limit(1)
+        )
+        if latest is not None and all(getattr(latest, v) == getattr(record, v) for v in values):
+            continue
+        row = {**asdict(record), "athlete_id": athlete_id, "valid_from": day, "raw_payload_id": raw_payload_id}
+        stmt = insert(AthleteZones).values(row)
+        update_cols = {c: stmt.excluded[c] for c in (*values, "raw_payload_id")}
+        session.execute(
+            stmt.on_conflict_do_update(
+                constraint="uq_athlete_zones_day", set_={**update_cols, "updated_at": func.now()}
+            )
+        )
+        changed += 1
+    return changed
+
+
+@dataclass(frozen=True)
+class StoredPayload:
+    id: int
+    payload: Any
+
+
+def iter_raw_payloads(session: Session, athlete_id: int, endpoint: str, batch: int = 20) -> Iterator[StoredPayload]:
+    """Every stored response for an endpoint, newest first (by last fetch, then id), read in
+    batches so a long history never sits in memory at once."""
+    after: tuple[datetime, int] | None = None
+    while True:
+        query = select(RawPayload.id, RawPayload.payload, RawPayload.last_fetched_at).where(
+            RawPayload.athlete_id == athlete_id, RawPayload.endpoint == endpoint
+        )
+        if after is not None:
+            fetched, row_id = after
+            query = query.where(
+                or_(
+                    RawPayload.last_fetched_at < fetched,
+                    and_(RawPayload.last_fetched_at == fetched, RawPayload.id < row_id),
+                )
+            )
+        rows = session.execute(
+            query.order_by(RawPayload.last_fetched_at.desc(), RawPayload.id.desc()).limit(batch)
+        ).all()
+        if not rows:
+            return
+        for r in rows:
+            yield StoredPayload(id=r.id, payload=r.payload)
+        after = (rows[-1].last_fetched_at, rows[-1].id)
 
 
 @dataclass(frozen=True)
@@ -353,6 +423,8 @@ def purge_athlete(sessions: sessionmaker[Session], blobs: BlobStore, athlete_id:
         HrvSummary,
         WeightDaily,
         SyncRun,
+        AthleteZones,
+        AthleteThreshold,
     ]
     with sessions.begin() as session:
         rows = {

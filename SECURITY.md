@@ -45,11 +45,13 @@ send, or depend on.
 | Malicious activity file (zip bomb, wrong format, corrupt member) | Size cap, FIT signature check; a zip that can't be read is marked `invalid` (`corrupt_zip`), never retried in a loop | `garmin/files.py`, `sync.py` |
 | Malformed or hostile FIT content | Garmin's maintained SDK decodes; size (64 MiB) and record (400k) caps; integrity/CRC check before reading; only known numeric fields taken, developer fields and text ignored; out-of-range values become NULL; failures marked `invalid` with a fixed reason code, never retried in a loop | `fit.py`, `sync.py` |
 | Path traversal via zip member names | Blob keys built from IDs and SHA-256 only; keys validated (no `.`/`..`/absolute/backslash) and resolved inside the store root; member names stored as data | `storage/blobs.py`, `storage/repository.py` |
-| App compromise or bug alters the schema | App connects as `garminagent_app` (DML only, no DDL/TRUNCATE, read-only `alembic_version`); migrations run as the owner in a separate one-shot process; the app containers get no owner credentials (compose blanks `POSTGRES_PASSWORD` and `MIGRATION_DATABASE_URL` for `scheduler` and `app`) | migration 0001, `docker/postgres/init`, compose |
+| App compromise or bug alters the schema | App connects as `garminagent_app` (DML only, no DDL/TRUNCATE, read-only `alembic_version`; from 0006 each migration grants it explicitly on its own new tables, tested with default privileges revoked); migrations run as the owner in a separate one-shot process; the app containers get no owner credentials (compose blanks `POSTGRES_PASSWORD` and `MIGRATION_DATABASE_URL` for `scheduler` and `app`) | migration 0001, `docker/postgres/init`, compose |
 | SQL injection | SQLAlchemy Core with bound parameters everywhere; the one interpolated identifier (app role) is regex-validated twice | `storage/repository.py`, migration 0001, `config.py` |
 | Database traffic readable on a network | Warning on every connection path when a non-local host lacks `sslmode=require/verify-*`; AWS must use `verify-full` | `storage/db.py` |
 | Raw store readable by other local users | Files 0600, directories 0700 (POSIX); in the image `/data` belongs to the non-root `app` user | `storage/blobs.py`, Dockerfile |
-| Location or free text spreading into analysis | Normalized tables have no GPS or name/description/note columns (schema guard test covers every normalized table); sleep notes, feedback and insights are never read; HRV status kept only if it is an enum code; raw layer keeps everything only for re-parsing | `storage/models.py`, `normalize.py`, `tests/storage/test_schema.py` |
+| Location or free text spreading into analysis | Normalized tables have no GPS or name/description/note columns (schema guard test covers every normalized and derived table, and fails on a table not assigned to a layer); sleep notes, feedback and insights are never read; HRV status kept only if it is an enum code; HR zone sport and method kept only as the spec's codes, and every text column in the M6a tables is held to its codes by a CHECK constraint; raw layer keeps everything only for re-parsing | `storage/models.py`, `normalize.py`, `tests/storage/test_schema.py` |
+| Wrong thresholds silently skewing loads (phase 2) | Every threshold source is range-checked with one table (`THRESHOLD_RANGES`): activity fields and Garmin zones become NULL when implausible, manual input is refused (exit 2, the message names the range, never the value); precedence is code (manual, Garmin zones, activity) and `thresholds list` shows each value's source; Garmin's FTP and threshold speed feed only rides and runs; generated default zones are not requested | `normalize.py`, `analytics/thresholds.py`, `cli.py` |
+| Analytics bugs breaking the sync | The `analyze` step catches every error per part, counts it in `sync_run.counts["analytics"]` and logs the class name only; it never changes how a run ends | `analytics/step.py`, `sync.py` |
 | Data kept longer than wanted | `garminagent purge-data --yes` deletes all rows (one transaction, cascading) and then all blobs; re-runnable | `storage/repository.py`, `cli.py` |
 | Data sent to a model (phase 3) | See *Data handling* in docs/plan.md; OWASP LLM/Agentic mapping below | planned |
 | Unsafe training plan (phase 3) | Load-progression and recovery limits as code; evaluator agent; user approval before a plan is active | planned |
@@ -99,6 +101,16 @@ send, or depend on.
 | Retention and deletion | Data is kept until the owner deletes it; `purge-data` removes everything (rows, then blobs) and can be re-run. Revisions of raw payloads are kept (dedupe by content hash) so analysis can be reproduced. |
 | Data minimization | Normalized layer: no GPS, names or descriptions (enforced by a test). Raw layer keeps Garmin's payloads verbatim, including GPS in summaries and FIT files, for re-parsing; it never feeds agents. |
 | `/security-review` | No findings at the reporting bar. One hardening note (migrations bypassed the TLS warning) fixed before merge. |
+
+### M6a analytics review (2026-11-07)
+
+`/security-review` on the M6a change: no findings at the reporting bar. It checked migration 0006's
+role interpolation (validated with `ROLE_NAME`, constant table names) and its grants (DML on the two
+new tables and their sequences only); bound parameters in every new query; counts and codes only in
+logs and `sync_run`; Garmin codes kept only from the spec's enums. Two hardening notes, both applied:
+the database helper behind `renormalize`, `analyze` and `thresholds` now turns any unexpected error
+into exit 1 with the class name (no traceback), and docs/operations.md says `thresholds list`, which
+prints values, is for interactive use only, not where stdout becomes logs.
 
 ## Automated checks
 

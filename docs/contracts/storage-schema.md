@@ -1,23 +1,24 @@
 # Storage schema contract
 
-Implemented, migrations 0001–0005. **`src/garminagent/storage/models.py` is authoritative** for
+Implemented, migrations 0001–0006. **`src/garminagent/storage/models.py` is authoritative** for
 columns and types; this file says what they mean and who may rely on what. Reasoning: ADR 0003.
 
 ## Layers and who may read them
 
 | Layer | Tables | Readers | Writers |
 |---|---|---|---|
-| Raw | `raw_payload`, `activity_file`, blobs | `normalize` and `fit` only, plus `purge-data` | Sync |
+| Raw | `raw_payload`, `activity_file`, blobs | `normalize`, `fit` and `renormalize` only, plus `purge-data` | Sync |
 | Operational | `athlete`, `sync_cursor`, `sync_run` | Sync, `status` | Sync, runner |
-| Normalized | `activity`, `daily_summary`, `activity_sample`, `activity_lap`, `sleep_summary`, `hrv_summary`, `weight_daily` | Analytics | Sync, FIT parser |
-| Derived | Phase 2, not built (ADR 0013) | Agent layer | Analytics |
+| Normalized | `activity`, `daily_summary`, `activity_sample`, `activity_lap`, `sleep_summary`, `hrv_summary`, `weight_daily`, `athlete_zones` | Analytics | Sync, FIT parser, `renormalize` |
+| Derived | `athlete_threshold` (M6a); metrics tables follow in M6b–M6e (ADR 0013) | Analytics; agent layer through views (M6f) | Analytics; `manual` thresholds by `garminagent thresholds` |
 
 **Agents read none of these directly** ([agent layer](agent-layer.md)).
 
 ## Invariants
 
-1. **Normalized tables hold no GPS and no free text** (names, descriptions, notes). Enforced by
-   `tests/storage/test_schema.py`. New tables must be covered.
+1. **Normalized and derived tables hold no GPS and no free text** (names, descriptions, notes).
+   Enforced by `tests/storage/test_schema.py`, which also fails on a table not assigned to a layer.
+   Text columns in derived tables hold codes, held by CHECK constraints.
 2. **Every data table has `athlete_id`** with `ON DELETE CASCADE`. Single-user today.
 3. **Normalized rows are replaceable.** Anything can be rebuilt from raw. Nothing unique to the owner
    lives here. Derived tables should keep this property, apart from manual inputs such as thresholds.
@@ -27,9 +28,9 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 6. **Missing means NULL.** Values out of plausible range become NULL at parsing, in every dataset
    (activities and daily summaries since ADR 0015; older rows keep their values until re-normalized).
    Almost all measures are nullable, so consumers must handle NULL.
-7. **Roles:** the app role has DML only. A new table's migration must grant it, and test it in
-   `tests/storage/test_privileges.py`.
-8. **Migrations are linear, numbered and run as the owner.** Next: 0006. Only track A adds them.
+7. **Roles:** the app role has DML only. A new table's migration must grant it explicitly (from 0006;
+   0002–0005 relied on 0001's default privileges), and test it in `tests/storage/test_privileges.py`.
+8. **Migrations are linear, numbered and run as the owner.** Next: 0007. Only track A adds them.
 
 ## Tables
 
@@ -40,12 +41,14 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 | `activity_file` | `id`; unique `blob_key`, and `(athlete_id, activity_id, kind, sha256)` | `kind` is `original` or `fit`. `parse_status` NULL (unparsed), `parsed`, `invalid`, `skipped`, with `parser_version`. `member_name` is data, never a path |
 | `sync_cursor` | `(athlete_id, dataset)` | Contiguous `synced_from`..`synced_through` |
 | `sync_run` | `id` | `started_at`, `finished_at`, `stopped`, `requests`, `counts` (JSONB of integers only) |
-| `activity` | `(athlete_id, activity_id)` | Start times (UTC, and local which may be NULL), `sport`, `event_type`, durations, distance, elevation, HR, power, Garmin's TE, load and VO2max, HR zone seconds. `file_status` NULL (untried), `stored`, `unavailable`, `invalid`; only NULL is retried |
+| `activity` | `(athlete_id, activity_id)` | Start times (UTC, and local which may be NULL), `sport`, `event_type`, durations, distance, elevation, HR, power, Garmin's TE, load and VO2max, HR zone seconds, and since 0006 the thresholds Garmin reported with it (`lactate_threshold_hr`, `threshold_speed_mps`, `ftp_w`) plus Garmin's `garmin_tss` and `garmin_if`. `file_status` NULL (untried), `stored`, `unavailable`, `invalid`; only NULL is retried |
 | `daily_summary` | `(athlete_id, calendar_date)` | Resting, min and max HR; steps; stress average, max and minutes by level; Body Battery min, max, charged, drained, end of day; respiration; intensity minutes; calories |
 | `activity_sample` | `(athlete_id, activity_id, elapsed_s)` | `heart_rate`, `cadence`, `power_w`, `speed_mps`, `distance_m`, `altitude_m`, `temperature_c`. FK to `activity`, cascade |
 | `activity_lap` | `(athlete_id, activity_id, lap_index)` | Start offset, elapsed and timer seconds, distance, HR, average power. FK to `activity`, cascade |
 | `sleep_summary` | `(athlete_id, calendar_date)` | Start and end, seconds by stage, naps, awake count, score, average HR and SpO2 (always empty on real data: Garmin's sleep summaries send these keys as null), stress, respiration |
 | `hrv_summary` | `(athlete_id, calendar_date)` | Last night average and 5-min high, weekly average, Garmin's baseline bands, `status` code. Milliseconds |
+| `athlete_zones` | `id`; unique `(athlete_id, sport, valid_from)` | Garmin's HR zone settings per zone sport (`DEFAULT`, `RUNNING`, `CYCLING`, `SWIMMING`, `ROWING`): training method code, five zone floors, max, resting and LT HR used. A row from the day a change was first fetched; holds until the next row for that sport |
+| `athlete_threshold` | `id`; unique `(athlete_id, value_type, sport, source, valid_from)` | The threshold timeline: `value_type` (`ftp`, `lthr`, `max_hr`, `resting_hr`, `threshold_speed`), `sport` (`all` or a sport group), `source` (`manual`, `garmin_zones`, `activity`), `valid_from`, `value` in bpm, W or m/s. `manual` rows are the owner's; the others are rebuilt by `analyze` |
 | `weight_daily` | `(athlete_id, calendar_date)` | Latest weigh-in in kg (Garmin sends grams despite the spec; converted, confirmed on real data 2026-11-03), BMI, body fat, entries. Sensitive: opt-in before reaching a model |
 
 ## Semantics consumers get wrong
@@ -56,6 +59,14 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 - **`calendar_date` for sleep is the date Garmin assigns the night**, not necessarily the start date.
 - **`normalized_power_w`, `training_load`, TE and VO2max on `activity` are Garmin's values**, kept for
   reference and cross-checks. `training_load` is on a different scale from the proposed loads.
+- **Thresholds are resolved, not read.** Use `garminagent.analytics.thresholds` (`thresholds_at`,
+  `ThresholdTimeline`): per type the first source in precedence manual → Garmin zones → activity with
+  a value on or before the date wins, the group's own row before `all`, and a value holds until the
+  next change. Reading one source's rows directly gives the wrong answer.
+- **`athlete_zones.valid_from` is when we first saw a change**, not when it was made in Garmin, and
+  history starts with the first fetch (M6a). Earlier dates fall back to activity values.
+- **`garmin_tss` and `garmin_if` are Garmin's numbers** for cross-checks only; our loads use neutral
+  names and our own definitions (ADR 0013).
 - **Raw revisions accumulate.** The latest for a request is the highest `last_fetched_at`.
 - **Dataset names and blob key layout** are listed in the [ingestion contract](ingestion.md).
 

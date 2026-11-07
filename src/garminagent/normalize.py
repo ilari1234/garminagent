@@ -45,6 +45,13 @@ class ActivityRecord:
     hr_zone_3_s: float | None = None
     hr_zone_4_s: float | None = None
     hr_zone_5_s: float | None = None
+    # The athlete's thresholds as Garmin reported them with the activity (ADR 0013), and
+    # Garmin's own stress score and intensity, kept for cross-checks only.
+    lactate_threshold_hr: float | None = None
+    threshold_speed_mps: float | None = None
+    ftp_w: float | None = None
+    garmin_tss: float | None = None
+    garmin_if: float | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +91,19 @@ class _Lenient(BaseModel):
 
 MAX_DURATION_S = 1_000_000.0  # ~11.5 days; the same cap as FIT parsing
 
+# Plausible ranges for athlete thresholds, shared by every source: activity items, Garmin's HR
+# zones and manual input (`garminagent thresholds set`). Deliberately wider than any one
+# athlete's values, narrower than the "no data" markers and unit mix-ups they guard against.
+THRESHOLD_RANGES: dict[str, tuple[float, float]] = {
+    "lthr": (80, 230),  # bpm
+    "max_hr": (100, 250),  # bpm
+    "resting_hr": (25, 120),  # bpm
+    "ftp": (30, 700),  # W
+    "threshold_speed": (0.5, 10.0),  # m/s (2 to 33 min/km)
+}
+# The spec gives `getlactateThresholdSpeed` in centimetres per millisecond: 1 cm/ms = 10 m/s.
+CM_PER_MS_TO_MPS = 10.0
+
 
 # --- activities (activity search items; the spec's SummarizedActivityDTO) ---
 
@@ -118,6 +138,16 @@ class _ActivityIn(_Lenient):
     hrTimeInZone_3: float | None = None
     hrTimeInZone_4: float | None = None
     hrTimeInZone_5: float | None = None
+    lactateThresholdBpm: float | None = None
+    getlactateThresholdSpeed: float | None = None  # sic: the spec's spelling
+    maxFtp: float | None = None
+    trainingStressScore: float | None = None
+    intensityFactor: float | None = None
+
+
+def _threshold(kind: str, value: float | None) -> float | None:
+    low, high = THRESHOLD_RANGES[kind]
+    return _within(value, low, high)
 
 
 def _parse_time(value: str) -> datetime:
@@ -170,6 +200,17 @@ def parse_activities(items: Any) -> Normalized[ActivityRecord]:
                 hr_zone_3_s=_within(raw.hrTimeInZone_3, 0, MAX_DURATION_S),
                 hr_zone_4_s=_within(raw.hrTimeInZone_4, 0, MAX_DURATION_S),
                 hr_zone_5_s=_within(raw.hrTimeInZone_5, 0, MAX_DURATION_S),
+                lactate_threshold_hr=_threshold("lthr", raw.lactateThresholdBpm),
+                threshold_speed_mps=_threshold(
+                    "threshold_speed",
+                    raw.getlactateThresholdSpeed * CM_PER_MS_TO_MPS
+                    if raw.getlactateThresholdSpeed is not None
+                    else None,
+                ),
+                ftp_w=_threshold("ftp", raw.maxFtp),
+                garmin_tss=_within(raw.trainingStressScore, 0, 2000),
+                # A decimal fraction per the spec (0.80 = 80 %); a percentage would land outside.
+                garmin_if=_within(raw.intensityFactor, 0, 3),
             )
         )
     if result.skipped:
@@ -523,4 +564,88 @@ def parse_weight(payload: Any) -> Normalized[WeightRecord]:
         )
     if result.skipped:
         log.warning("skipped %d weight records that failed validation", result.skipped)
+    return result
+
+
+# --- HR zones (heartRateZones/v2: a list of the spec's HeartRateZonesDTO, one per sport) ---
+
+# The spec's enums. Anything else is not stored: codes only, never free text.
+ZONE_SPORTS = ("DEFAULT", "RUNNING", "CYCLING", "SWIMMING", "ROWING")
+ZONE_METHODS = ("HR_MAX", "LACTATE_THRESHOLD", "HR_RESERVE", "CUSTOM")
+
+
+@dataclass(frozen=True)
+class HrZonesRecord:
+    sport: str
+    training_method: str | None = None
+    zone1_floor: int | None = None
+    zone2_floor: int | None = None
+    zone3_floor: int | None = None
+    zone4_floor: int | None = None
+    zone5_floor: int | None = None
+    max_hr: int | None = None
+    resting_hr: int | None = None
+    lthr: int | None = None
+
+
+class _HrZonesIn(_Lenient):
+    sport: str
+    trainingMethod: str | None = None
+    zone1Floor: int | None = None
+    zone2Floor: int | None = None
+    zone3Floor: int | None = None
+    zone4Floor: int | None = None
+    zone5Floor: int | None = None
+    maxHeartRateUsed: int | None = None
+    restingHeartRateUsed: int | None = None
+    lactateThresholdHeartRateUsed: int | None = None
+
+
+def _threshold_int(kind: str, value: int | None) -> int | None:
+    low, high = THRESHOLD_RANGES[kind]
+    return value if value is not None and low <= value <= high else None
+
+
+def parse_hr_zones(payload: Any) -> Normalized[HrZonesRecord]:
+    """Today's HR zone settings per sport. An item is skipped (and counted) when its sport isn't
+    one of the spec's codes, the same sport appears twice, or its zone floors aren't ascending:
+    zones that can't be trusted as a whole are not kept in part. An unknown training method
+    becomes NULL. A payload that isn't a list counts as one skipped item."""
+    result = Normalized[HrZonesRecord]()
+    if payload is not None and not isinstance(payload, list):
+        result.skipped = 1
+        log.warning("HR zones payload has an unexpected shape; nothing stored from it")
+        return result
+    seen: set[str] = set()
+    for item in _as_list(cast(object, payload)):
+        try:
+            raw = _HrZonesIn.model_validate(item)
+        except ValidationError:
+            result.skipped += 1
+            continue
+        floors = [
+            _within_int(f, 20, 250)
+            for f in (raw.zone1Floor, raw.zone2Floor, raw.zone3Floor, raw.zone4Floor, raw.zone5Floor)
+        ]
+        present = [f for f in floors if f is not None]
+        if raw.sport not in ZONE_SPORTS or raw.sport in seen or present != sorted(set(present)):
+            result.skipped += 1
+            continue
+        seen.add(raw.sport)
+        result.records.append(
+            HrZonesRecord(
+                sport=raw.sport,
+                training_method=raw.trainingMethod if raw.trainingMethod in ZONE_METHODS else None,
+                zone1_floor=floors[0],
+                zone2_floor=floors[1],
+                zone3_floor=floors[2],
+                zone4_floor=floors[3],
+                zone5_floor=floors[4],
+                max_hr=_threshold_int("max_hr", raw.maxHeartRateUsed),
+                resting_hr=_threshold_int("resting_hr", raw.restingHeartRateUsed),
+                lthr=_threshold_int("lthr", raw.lactateThresholdHeartRateUsed),
+            )
+        )
+    if result.skipped:
+        log.warning("skipped %d HR zone records that failed validation", result.skipped)
     return result

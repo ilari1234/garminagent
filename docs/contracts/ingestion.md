@@ -1,7 +1,7 @@
 # Ingestion contract
 
-Implemented in M2–M5. Code: `src/garminagent/garmin/`, `sync.py`, `runner.py`, `normalize.py`,
-`fit.py`, `cli.py`.
+Implemented in M2–M5, extended in M6a. Code: `src/garminagent/garmin/`, `sync.py`, `runner.py`,
+`normalize.py`, `renormalize.py`, `fit.py`, `cli.py`.
 
 ## Garmin client (`garminagent.garmin`)
 
@@ -17,11 +17,19 @@ Implemented in M2–M5. Code: `src/garminagent/garmin/`, `sync.py`, `runner.py`,
 
 ## Normalization (`garminagent.normalize`)
 
-`parse_activities`, `parse_daily_summaries`, `parse_sleep`, `parse_hrv`, `parse_weight` each take a raw
-payload and return `Normalized[T]` with `records` and a `skipped` count.
+`parse_activities`, `parse_daily_summaries`, `parse_sleep`, `parse_hrv`, `parse_weight`, `parse_hr_zones`
+each take a raw payload and return `Normalized[T]` with `records` and a `skipped` count.
 
 - Lenient: unknown or malformed items are skipped and counted; they never raise for the run.
-- Must not emit GPS or free text. HRV status passes only if it's an enum-shaped code.
+- Must not emit GPS or free text. HRV status passes only if it's an enum-shaped code; HR zone `sport`
+  and training method only if they are the spec's codes (an unknown sport skips the item, an unknown
+  method becomes NULL).
+- Thresholds share one range table, `THRESHOLD_RANGES` (bpm, W, m/s), used for activity fields, HR
+  zones and manual input alike. `getlactateThresholdSpeed` is converted from the spec's cm/ms to m/s
+  (×10); this unit is not yet confirmed on real data (OPEN_QUESTIONS 38).
+- `renormalize(sessions, athlete, dataset)` re-parses the newest stored version of each record for
+  `activities`, `daily_summaries`, `sleep`, `hrv` or `weight` into its table: no Garmin requests,
+  inserts and updates only.
 
 ## FIT parsing (`garminagent.fit`)
 
@@ -41,8 +49,9 @@ the single entry point for one locked, recorded run.
 | `hrv` | HRV range | `hrv_summary` |
 | `weight` | weight range | `weight_daily` |
 | `activities` | activity search, 90-day chunks | `activity` |
+| `hr_zones` | HR zones v2, `generateDefaults=false`, at most once per day (cursor end = last fetch day), first in the run | `athlete_zones` (a row only when a value changes) |
 
-Report-only keys in `counts`: `activity_files`, `fit_files`. All counts are integers.
+Report-only keys in `counts`: `activity_files`, `fit_files`, `analytics`. All counts are integers.
 
 **Adding a dataset** means: a client method, a `parse_*` returning `Normalized`, a table without GPS
 or free text, an upsert, a `RangeDataset` or its own step, tests against the fake server and a schema
@@ -58,9 +67,10 @@ client) is recorded as an `internal_error` run with no requests or counts. Each 
 1 and shows in `status`.
 
 **Post-sync steps** run inside the lock and make no Garmin requests. Bad input must not fail the run:
-`parse_pending_fit_files`, the existing one, marks a bad file `invalid` and continues. Only one FIT
-file per activity is used (the first by name); others are marked `skipped`. M6a proposes `analyze` as
-the next step.
+`parse_pending_fit_files` marks a bad file `invalid` and continues. Only one FIT file per activity is
+used (the first by name); others are marked `skipped`. `garminagent.analytics.run_analytics` follows
+(M6a): it runs after any stop, never raises, and its counts go to `counts["analytics"]`, with
+`errors` for a failed part (logged by class name). It reads the normalized layer only.
 
 ## Blob store (`garminagent.storage.blobs`)
 
@@ -88,6 +98,9 @@ Every command prints JSON on stdout and logs on stderr, with no health values in
 | `schedule [--interval-hours H]` | Local loop around the same run |
 | `status [--max-age-hours H]` | Counts, dates and stop reasons. Read-only; exits 1 if unhealthy with a max age |
 | `parse-fit` | Parse pending FIT files; no Garmin requests |
+| `renormalize DATASET` | Re-parse stored responses into a normalized table; no Garmin requests. Holds the sync lock (`already_running` if busy) |
+| `analyze` | The analytics step alone; prints counts and unmapped sport keys. Holds the sync lock; exit 1 if a part failed |
+| `thresholds set TYPE VALUE [--sport] [--from]`, `unset TYPE --from [--sport]`, `list [--at] [--sport]` | Manual thresholds; out-of-range input exits 2. `list` prints values to stdout only |
 | `purge-data --yes` | Delete all rows, then blobs. Without `--yes`, exits 2 |
 
 | Exit code | Meaning |

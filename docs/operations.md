@@ -125,6 +125,49 @@ docker compose up -d     # runs migrate again (no-op if nothing new), restarts s
 If a release improves FIT parsing (`PARSER_VERSION`), already stored files are re-parsed on
 the next sync, or right away with `docker compose run --rm app parse-fit`.
 
+If a release reads new fields from responses already stored (M6a: the threshold columns on
+`activity`), re-parse them once; no Garmin requests, no API key needed:
+
+```bash
+docker compose run --rm app renormalize activities   # also: daily_summaries, sleep, hrv, weight
+docker compose run --rm app analyze                  # rebuild the threshold timeline from them
+```
+
+`renormalize` uses the newest stored version of each record and prints counts only. Like
+`analyze`, it waits for no one: if a sync holds the lock it prints `"stopped": "already_running"`;
+run it again afterwards.
+
+## Analytics and thresholds
+
+Every sync ends with the `analyze` step (phase 2, ADR 0013); `garminagent analyze` runs it alone.
+In M6a it groups activities by sport and rebuilds the threshold timeline. It never fails a sync:
+its counts are in `sync_run.counts["analytics"]`, and a failure shows as `"errors"` there and as a
+log line naming the exception class. `analyze` prints `unmapped_sport_keys`: Garmin activity types
+not yet in a sport group (they count as `other`; add them in `garminagent/analytics/sports.py`).
+
+HR zones are fetched once a day (`hr_zones` in `status`) and kept as history. Thresholds come from
+three sources; on any date the first one that has a value wins:
+
+1. **manual** — yours, set with `thresholds set`. Holds until your next value or `thresholds unset`,
+   even if Garmin's values change later.
+2. **garmin_zones** — max, resting and lactate threshold HR from Garmin's HR zone settings, from the
+   day they were first fetched.
+3. **activity** — values Garmin sent with your activities: LTHR per sport group, FTP from rides,
+   threshold speed from runs. These cover history before the first zones fetch.
+
+```bash
+docker compose run --rm app thresholds list --at 2026-11-01 --sport run
+docker compose run --rm app thresholds set ftp 250 --sport ride --from 2026-11-01
+docker compose run --rm app thresholds set lthr 168            # all sports, from today (UTC)
+docker compose run --rm app thresholds unset ftp --sport ride --from 2026-11-01
+```
+
+Units: bpm for `lthr`, `max_hr` and `resting_hr`; W for `ftp`; m/s for `threshold_speed`
+(4:30 min/km is 3.70 m/s). Values outside a plausible range are refused with exit code 2:
+LTHR 80–230, max HR 100–250, resting HR 25–120, FTP 30–700 W, threshold speed 0.5–10 m/s.
+`thresholds list` prints values to your terminal only; logs never carry them. It is for
+interactive use: don't run it where stdout is collected as logs (a scheduled container, CloudWatch).
+
 ## Backups and restore
 
 Backups contain your health data. Keep them out of the repository (`data/` is gitignored)

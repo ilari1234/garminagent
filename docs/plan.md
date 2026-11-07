@@ -213,7 +213,7 @@ from the AWS track (code-only) lands before M6a.
 - **M6a — Thresholds:** `hr_zones` dataset (one request per day) kept as history; threshold
   columns on `activity`, filled from stored raw payloads by `garminagent renormalize`; an
   `athlete_threshold` timeline (manual, then Garmin zones, then activity values) with
-  `garminagent thresholds set|list`; sport grouping; an `analyze` step after FIT parsing and
+  `garminagent thresholds set|unset|list`; sport grouping; an `analyze` step after FIT parsing and
   `garminagent analyze`; migration 0006.
 - **M6b — Per-activity metrics:** `activity_metrics` with weighted power, power load, HR load,
   the chosen load and its method, time in HR zones and power levels, efficiency factor,

@@ -9,10 +9,13 @@ from typing import Any, cast
 import httpx
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
 from garminagent import sync
+from garminagent.analytics import ANALYTICS
+from garminagent.analytics import step as analytics_step
 from garminagent.cli import app
 from garminagent.config import MIN_SYNC_REQUESTS, Settings
 from garminagent.garmin import GarminClient, UnexpectedFileError
@@ -21,13 +24,14 @@ from garminagent.storage.models import (
     Activity,
     ActivityFile,
     ActivitySample,
+    AthleteZones,
     DailySummary,
     HrvSummary,
     SleepSummary,
     WeightDaily,
 )
 from garminagent.storage.repository import SyncRange, get_cursor
-from garminagent.sync import ACTIVITIES, DAILY_SUMMARIES, HRV, SLEEP, WEIGHT, Syncer, SyncReport
+from garminagent.sync import ACTIVITIES, DAILY_SUMMARIES, HR_ZONES, HRV, SLEEP, WEIGHT, Syncer, SyncReport
 from tests.garmin.fakes import FakeGarmin, make_activity_fit, make_corrupt_zip, make_zip
 from tests.storage.conftest import PgDatabase
 
@@ -40,6 +44,24 @@ DOWNLOAD_PATTERN = r"/download-service/files/activity/(\d+)"
 SLEEP_PATH = "/sleep-service/sleep/dailySleepSummariesByDate"
 HRV_PATTERN = r"/hrv-service/hrv/daily/([\d-]+)/([\d-]+)"
 WEIGHT_PATTERN = r"/weight-service/weight/range/([\d-]+)/([\d-]+)"
+ZONES_PATH = "/biometric-service/heartRateZones/v2"
+
+
+def zones_dto(sport: str = "DEFAULT", **values: Any) -> dict[str, Any]:
+    """A synthetic HeartRateZonesDTO."""
+    return {
+        "sport": sport,
+        "trainingMethod": "LACTATE_THRESHOLD",
+        "zone1Floor": 100,
+        "zone2Floor": 120,
+        "zone3Floor": 140,
+        "zone4Floor": 155,
+        "zone5Floor": 170,
+        "maxHeartRateUsed": 190,
+        "restingHeartRateUsed": 48,
+        "lactateThresholdHeartRateUsed": 168,
+        **values,
+    }
 
 
 @dataclass
@@ -49,6 +71,7 @@ class FakeAccount:
     days: list[date] = field(default_factory=lambda: [FIRST + timedelta(d) for d in range((TODAY - FIRST).days + 1)])
     missing_file: int = 2_000_003
     invalid_file: int = 2_000_005
+    zones: Any = field(default_factory=lambda: [zones_dto(), zones_dto("RUNNING", lactateThresholdHeartRateUsed=172)])
 
     def __post_init__(self) -> None:
         self.activities: list[dict[str, Any]] = [
@@ -59,6 +82,7 @@ class FakeAccount:
                 "activityType": {"typeKey": "running"},
                 "duration": 3600.0,
                 "activityTrainingLoad": 80.0 + i,
+                "lactateThresholdBpm": 160.0 + i // 10,  # changes three times over the history
             }
             for i, day in enumerate(self.days[::3])
         ]
@@ -70,6 +94,7 @@ class FakeAccount:
         garmin.route("GET", SLEEP_PATH, self.sleep)
         garmin.route("GET", HRV_PATTERN, self.hrv)
         garmin.route("GET", WEIGHT_PATTERN, self.weight)
+        garmin.route("GET", ZONES_PATH, lambda request: httpx.Response(200, json=self.zones))
 
     @staticmethod
     def _range(request: httpx.Request) -> tuple[date, date]:
@@ -463,3 +488,166 @@ def test_one_refusing_endpoint_does_not_block_the_others(
     assert cursor(app_sessions, WEIGHT) is None  # retried next run
     assert count(app_sessions, SleepSummary) == 92
     assert count(app_sessions, Activity) == 31
+
+
+# --- M6a: HR zones and the analyze step ---
+
+
+def zone_rows(sessions: sessionmaker[Session]) -> list[tuple[str, date, int | None, int | None]]:
+    with sessions() as session:
+        rows = session.execute(
+            select(AthleteZones.sport, AthleteZones.valid_from, AthleteZones.lthr, AthleteZones.zone3_floor).order_by(
+                AthleteZones.sport, AthleteZones.valid_from
+            )
+        ).all()
+    return [(r.sport, r.valid_from, r.lthr, r.zone3_floor) for r in rows]
+
+
+def run_sync_on(day: date, garmin: FakeGarmin, sessions: sessionmaker[Session], blobs: LocalBlobStore) -> SyncReport:
+    with garmin.client(min_interval=0, max_retries=0) as client:
+        return Syncer(client, sessions, blobs, start=FIRST, today=day, max_requests=10_000, page_size=10).run()
+
+
+def test_hr_zones_are_fetched_once_a_day_and_kept_as_history(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.counts[HR_ZONES] == {"records": 2, "changed": 2, "skipped": 0}
+    assert len(garmin.requests_to(ZONES_PATH)) == 1
+    assert garmin.requests_to(ZONES_PATH)[0].params == {"generateDefaults": "false"}
+    assert zone_rows(app_sessions) == [("DEFAULT", TODAY, 168, 140), ("RUNNING", TODAY, 172, 140)]
+
+    run_sync(garmin, app_sessions, blobs)  # same day: no second request
+    assert len(garmin.requests_to(ZONES_PATH)) == 1
+
+    tomorrow = TODAY + timedelta(days=1)
+    run_sync_on(tomorrow, garmin, app_sessions, blobs)  # unchanged: fetched, but no new row
+    account.zones = [zones_dto(), zones_dto("RUNNING", lactateThresholdHeartRateUsed=175)]
+    report = run_sync_on(tomorrow + timedelta(days=1), garmin, app_sessions, blobs)
+
+    assert len(garmin.requests_to(ZONES_PATH)) == 3
+    assert report.counts[HR_ZONES]["changed"] == 1
+    assert zone_rows(app_sessions) == [
+        ("DEFAULT", TODAY, 168, 140),
+        ("RUNNING", TODAY, 172, 140),
+        ("RUNNING", tomorrow + timedelta(days=1), 175, 140),
+    ]
+    assert cursor(app_sessions, HR_ZONES) == SyncRange(TODAY, tomorrow + timedelta(days=1))
+
+
+@pytest.mark.parametrize("payload", [{"unexpected": "shape"}, [{"sport": "SKIING"}, "junk"]])
+def test_malformed_hr_zones_are_counted_and_not_retried_today(
+    payload: Any,
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+) -> None:
+    account.zones = payload
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert report.counts[HR_ZONES]["records"] == 0
+    assert report.counts[HR_ZONES]["skipped"] >= 1
+    assert zone_rows(app_sessions) == []
+    assert cursor(app_sessions, HR_ZONES) == SyncRange(TODAY, TODAY)  # asking again today gives the same
+    assert count(app_sessions, Activity) == 31  # the rest of the run went on
+
+
+@pytest.mark.parametrize("status", [400, 403, 404])
+def test_refused_hr_zones_skip_only_that_dataset(
+    status: int, garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != ZONES_PATH]
+    garmin.route("GET", ZONES_PATH, lambda request: httpx.Response(status, json={}))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert report.counts[HR_ZONES] == {"errors": 1}
+    assert cursor(app_sessions, HR_ZONES) is None  # tried again next run
+    assert count(app_sessions, DailySummary) == 92
+
+
+def test_server_error_on_hr_zones_stops_the_run(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    garmin.routes = [r for r in garmin.routes if r[1].pattern != ZONES_PATH]
+    garmin.route("GET", ZONES_PATH, lambda request: httpx.Response(503))
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.stopped == "garmin_error"
+    assert ANALYTICS in report.counts  # analytics still ran on what was stored
+
+
+def test_hr_zones_respect_the_request_budget(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    report = run_sync(garmin, app_sessions, blobs, max_requests=0)
+
+    assert report.stopped == "budget"
+    assert garmin.requests_to(ZONES_PATH) == []
+
+
+def test_sync_run_carries_analytics_counts(
+    garmin: FakeGarmin, account: FakeAccount, app_sessions: sessionmaker[Session], blobs: LocalBlobStore
+) -> None:
+    report = run_sync(garmin, app_sessions, blobs)
+
+    analytics = report.counts[ANALYTICS]
+    assert analytics["activities"] == 31
+    assert analytics["sport_run"] == 31
+    assert analytics["unmapped_activities"] == 0
+    assert analytics["thresholds_activity"] == 4  # LTHR 160, 161, 162, 163 on runs
+    assert analytics["thresholds_garmin_zones"] == 6  # max, resting and LTHR for DEFAULT and RUNNING
+    assert analytics["thresholds_manual"] == 0
+    assert "errors" not in analytics
+    assert _only_counts(report.counts)
+
+    again = run_sync(garmin, app_sessions, blobs)
+    assert again.counts[ANALYTICS]["thresholds_inserted"] == 0  # nothing changed, nothing rewritten
+    assert again.counts[ANALYTICS]["thresholds_deleted"] == 0
+
+
+def test_analytics_failure_never_fails_the_sync(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(*args: object) -> None:
+        raise RuntimeError("synthetic failure 9c1e")
+
+    monkeypatch.setattr(analytics_step, "_thresholds", broken)
+
+    with caplog.at_level(logging.INFO):
+        report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert report.counts[ANALYTICS]["errors"] == 1
+    assert report.counts[ANALYTICS]["activities"] == 31  # the other part still ran
+    assert "analyze: thresholds failed: RuntimeError" in caplog.text
+    assert "9c1e" not in caplog.text
+
+
+def test_analytics_database_error_is_counted_not_raised(
+    garmin: FakeGarmin,
+    account: FakeAccount,
+    app_sessions: sessionmaker[Session],
+    blobs: LocalBlobStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(*args: object) -> None:
+        raise OperationalError("SELECT 1", {}, Exception("synthetic"))
+
+    monkeypatch.setattr(analytics_step, "rebuild_derived", broken)
+
+    report = run_sync(garmin, app_sessions, blobs)
+
+    assert report.complete
+    assert report.counts[ANALYTICS]["errors"] == 1

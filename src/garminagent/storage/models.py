@@ -147,6 +147,13 @@ class Activity(Base):
     hr_zone_3_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     hr_zone_4_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     hr_zone_5_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Thresholds Garmin reported with the activity (feed `athlete_threshold`, source `activity`),
+    # and Garmin's stress score and intensity, kept for cross-checks only (ADR 0013).
+    lactate_threshold_hr: Mapped[float | None] = mapped_column(Float, nullable=True)
+    threshold_speed_mps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ftp_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    garmin_tss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    garmin_if: Mapped[float | None] = mapped_column(Float, nullable=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
     # Activity file download: NULL = not tried yet, then stored / unavailable / invalid. Only
     # NULL is retried automatically, so missing files don't burn the request budget every run.
@@ -298,6 +305,64 @@ class WeightDaily(Base):
     entries: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+
+class AthleteZones(Base):
+    """Garmin's HR zone settings per sport, as history: the endpoint returns today's settings
+    only, so a row is added when a value changes and holds until the next row for that sport.
+    `sport` and `training_method` are the spec's codes, enforced here; no free text."""
+
+    __tablename__ = "athlete_zones"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"))
+    sport: Mapped[str] = mapped_column(String(16))
+    valid_from: Mapped[date] = mapped_column(Date)
+    training_method: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    zone1_floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    zone2_floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    zone3_floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    zone4_floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    zone5_floor: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    max_hr: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    resting_hr: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    lthr: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payload.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "sport", "valid_from", name="uq_athlete_zones_day"),
+        CheckConstraint("sport IN ('DEFAULT', 'RUNNING', 'CYCLING', 'SWIMMING', 'ROWING')", name="sport"),
+        CheckConstraint(
+            "training_method IN ('HR_MAX', 'LACTATE_THRESHOLD', 'HR_RESERVE', 'CUSTOM')", name="training_method"
+        ),
+    )
+
+
+class AthleteThreshold(Base):
+    """The threshold timeline: one row per change of a value type, sport group and source.
+    A value holds from `valid_from` until the next row with the same key; which source wins on
+    a date is the resolver's job (`garminagent.analytics.thresholds`). `manual` rows are the
+    owner's input and are never rewritten by analytics; `garmin_zones` and `activity` rows are
+    derived and rebuilt by every `analyze`."""
+
+    __tablename__ = "athlete_threshold"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"))
+    value_type: Mapped[str] = mapped_column(String(16))
+    sport: Mapped[str] = mapped_column(String(16))
+    source: Mapped[str] = mapped_column(String(16))
+    valid_from: Mapped[date] = mapped_column(Date)
+    value: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+    __table_args__ = (
+        UniqueConstraint("athlete_id", "value_type", "sport", "source", "valid_from", name="uq_athlete_threshold_key"),
+        CheckConstraint("value_type IN ('ftp', 'lthr', 'max_hr', 'resting_hr', 'threshold_speed')", name="value_type"),
+        CheckConstraint("sport IN ('all', 'run', 'ride', 'ski', 'strength', 'other')", name="sport"),
+        CheckConstraint("source IN ('manual', 'garmin_zones', 'activity')", name="source"),
+    )
 
 
 class SyncRun(Base):
