@@ -39,13 +39,19 @@ RUN apt-get update \
     && python -m pip uninstall --yes --quiet pip \
     && rm -rf /usr/local/lib/python3.*/ensurepip \
     && groupadd --system app && useradd --system --gid app --home-dir /app app \
-    && mkdir /data && chown app:app /data
+    && mkdir /data && chown app:app /data \
+    && mkdir -p /app/certs
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
+# AWS's RDS CA bundle (source and SHA-256 in SECURITY.md), read-only and owned by root. libpq
+# uses it through PGSSLROOTCERT for sslmode=verify-full; local compose (no TLS) never reads it.
+# /app/certs is made above: COPY --chmod would give a directory it creates the file's mode too.
+COPY --chmod=0444 docker/certs/rds-global-bundle.pem /app/certs/rds-global-bundle.pem
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     DATA_DIR=/data \
-    LOG_FORMAT=json
+    LOG_FORMAT=json \
+    PGSSLROOTCERT=/app/certs/rds-global-bundle.pem
 USER app
 VOLUME ["/data"]
 ENTRYPOINT ["garminagent"]

@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from sqlalchemy import Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.config import get_settings
+
 log = logging.getLogger(__name__)
 
 # Hosts reached over the machine or the compose network; anything else must use TLS.
@@ -14,17 +16,41 @@ LOCAL_DB_HOSTS = {"127.0.0.1", "localhost", "::1", "db"}
 TLS_SSLMODES = {"require", "verify-ca", "verify-full"}
 
 
-def warn_if_insecure(url: str) -> None:
-    """Warn when a non-local database is reached without requiring TLS. Every connection path
-    (app, migrations) calls this."""
+class InsecureDatabaseURL(ValueError):
+    """DB_REQUIRE_VERIFY_FULL is set and a non-local URL doesn't verify the server's certificate."""
+
+
+def check_tls(url: str, *, require_verify_full: bool | None = None) -> None:
+    """Every connection path (app, migrations, `db-bootstrap`) calls this before connecting.
+
+    A non-local host without `sslmode=verify-full` raises `InsecureDatabaseURL` when
+    `require_verify_full` is true (default: DB_REQUIRE_VERIFY_FULL); otherwise a host that
+    doesn't even require TLS gets a warning. On AWS the URLs are typed in by hand, so a missing
+    `sslmode` would silently fall back to unverified TLS without the hard check. Neither the
+    message nor the log line contains the URL: it carries the password.
+
+    A `host` query parameter overrides the URL's host in libpq, so it is the one judged; a
+    repeated parameter (a tuple) is never treated as local."""
     parsed = make_url(url)
-    if parsed.host not in LOCAL_DB_HOSTS and parsed.query.get("sslmode") not in TLS_SSLMODES:
-        # Never log the URL itself: it carries the password.
-        log.warning("database host %s is not local and sslmode does not require TLS", parsed.host)
+    query_host = parsed.query.get("host")
+    host = query_host if query_host is not None else parsed.host
+    if isinstance(host, str) and host in LOCAL_DB_HOSTS:
+        return
+    sslmode = parsed.query.get("sslmode")
+    if require_verify_full is None:
+        require_verify_full = get_settings().db_require_verify_full
+    if require_verify_full and sslmode != "verify-full":
+        raise InsecureDatabaseURL(
+            f"DB_REQUIRE_VERIFY_FULL is set: database host {host} needs sslmode=verify-full in its URL"
+        )
+    if sslmode not in TLS_SSLMODES:
+        log.warning("database host %s is not local and sslmode does not require TLS", host)
 
 
-def make_engine(url: str) -> Engine:
-    warn_if_insecure(url)
+def make_engine(url: str, *, require_verify_full: bool | None = None) -> Engine:
+    """An engine for `url`, after `check_tls` (DB_REQUIRE_VERIFY_FULL unless given). Creating it
+    doesn't connect."""
+    check_tls(url, require_verify_full=require_verify_full)
     return create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 5})
 
 

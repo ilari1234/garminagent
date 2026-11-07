@@ -1,7 +1,7 @@
 """Blob storage for raw files (activity zips and FIT files).
 
-`BlobStore` is the seam for AWS: `LocalBlobStore` writes under a directory now; an S3
-implementation can replace it without touching callers. App code gets its store from
+`BlobStore` is the seam for AWS: `LocalBlobStore` writes under a directory, `S3BlobStore`
+(`storage/s3.py`) into a bucket, and callers can't tell them apart. App code gets its store from
 `make_blob_store(settings)`, never by constructing one, so choosing a backend stays in one place.
 
 Keys are built by our own code from IDs and content hashes; they are still validated so a
@@ -31,6 +31,11 @@ class BlobStore(Protocol):
     def delete_prefix(self, prefix: str) -> int: ...
 
 
+class BlobStoreError(OSError):
+    """A backend failure other than a missing key. An `OSError`, like the local store's own
+    failures, so callers handle both backends the same way."""
+
+
 def validate_key(key: str) -> str:
     if not KEY_PATTERN.fullmatch(key):
         raise ValueError(f"invalid blob key: {key!r}")
@@ -38,11 +43,15 @@ def validate_key(key: str) -> str:
 
 
 def make_blob_store(settings: Settings) -> BlobStore:
-    """The blob store for the configured backend.
+    """The blob store for the configured backend (`BLOB_BACKEND`), so callers such as `sync`,
+    `parse-fit` and `purge-data` never choose one. The S3 module, and with it boto3, is
+    imported only when S3 is selected."""
+    if settings.blob_backend == "s3":
+        from garminagent.storage.s3 import make_s3_blob_store  # deferred: keeps boto3 out of local runs
 
-    Only the local store exists today. The S3 store (ADR 0008, stage B3b) adds its backend
-    setting here, so callers such as `sync`, `parse-fit` and `purge-data` don't change.
-    """
+        if not settings.blob_s3_bucket:  # Settings already refuses this; never fall back to local
+            raise ValueError("BLOB_BACKEND=s3 needs BLOB_S3_BUCKET")
+        return make_s3_blob_store(settings.blob_s3_bucket)
     return LocalBlobStore(settings.blob_dir)
 
 

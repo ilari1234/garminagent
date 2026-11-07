@@ -2,3 +2,6 @@
 # or they break when mounted into Linux containers.
 * text=auto
 *.sh text eol=lf
+# Certificate bundles are kept byte for byte, so their SHA-256 (recorded in SECURITY.md) matches
+# on every checkout.
+*.pem -text

@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 
+import psycopg
 import typer
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -33,9 +34,9 @@ from garminagent.renormalize import DATASETS as RENORMALIZE_DATASETS
 from garminagent.renormalize import renormalize as run_renormalize
 from garminagent.runner import ALREADY_RUNNING, run_schedule, run_sync_once
 from garminagent.runner import status as sync_status
-from garminagent.storage import migrate
+from garminagent.storage import bootstrap, migrate
 from garminagent.storage.blobs import make_blob_store
-from garminagent.storage.db import make_engine, make_session_factory, sync_lock
+from garminagent.storage.db import InsecureDatabaseURL, make_engine, make_session_factory, sync_lock
 from garminagent.storage.models import Athlete
 from garminagent.storage.repository import ensure_athlete, purge_athlete
 from garminagent.sync import FIT_FILES, SyncReport, parse_pending_fit_files
@@ -170,6 +171,23 @@ def db_upgrade() -> None:
     log.info("database schema at revision %s", revision)
 
 
+@app.command("db-bootstrap")
+def db_bootstrap() -> None:
+    """Create the schema owner and app roles with the master login (DB_MASTER_USERNAME and
+    DB_MASTER_PASSWORD), for servers without compose's init script, such as RDS. Run it before
+    `db-upgrade`; re-run it to set new passwords from the URLs. Exit code 2 if the settings or
+    existing roles don't allow it, 1 on a database error."""
+    try:
+        outcome = bootstrap.bootstrap(get_settings())
+    except (bootstrap.BootstrapError, InsecureDatabaseURL) as exc:
+        log.error("db-bootstrap refused: %s", exc)  # these messages never carry secrets
+        raise typer.Exit(code=2) from exc
+    except (SQLAlchemyError, psycopg.Error) as exc:
+        log.error("db-bootstrap failed: database error %s", exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps({"roles": outcome}, indent=2))
+
+
 @app.command("purge-data")
 def purge_data(
     yes: bool = typer.Option(False, "--yes", help="Confirm deleting all stored Garmin data."),
@@ -191,6 +209,9 @@ def purge_data(
         result = purge_athlete(sessions, make_blob_store(settings), athlete_id)
     except SQLAlchemyError as exc:
         log.error("purge failed: %s", exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    except OSError as exc:  # the rows are gone; a re-run removes the remaining blobs
+        log.error("purge failed while deleting blobs: %s; run it again", exc.__class__.__name__)
         raise typer.Exit(code=1) from exc
     finally:
         engine.dispose()

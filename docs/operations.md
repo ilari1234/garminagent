@@ -212,13 +212,26 @@ before going live.
 | Local | AWS |
 |---|---|
 | `scheduler` service (`schedule` loop) | EventBridge Scheduler → ECS Fargate task running `sync` (one-shot) every few hours, plus a more frequent rule until the backfill is complete; the advisory lock prevents overlaps |
+| `docker/postgres/init` (creates the app role) | ECS task running `db-bootstrap` once with the RDS master secret, then again only to set new passwords |
 | `migrate` service | ECS task running `db-upgrade` as a deployment step |
-| Postgres container | RDS PostgreSQL 18, `sslmode=verify-full`, KMS encryption, automated backups |
-| `appdata` volume | `BlobStore` on S3 (to be implemented), SSE-KMS |
+| Postgres container | RDS PostgreSQL 18, `sslmode=verify-full` with the RDS CA bundle in the image, `DB_REQUIRE_VERIFY_FULL=true`, KMS encryption, automated backups |
+| `appdata` volume | `BLOB_BACKEND=s3`, `BLOB_S3_BUCKET`: the S3 `BlobStore`, SSE-KMS |
 | `.env` | Secrets Manager → task environment |
 | `docker compose logs` | CloudWatch Logs (JSON lines already) |
 | health check | CloudWatch alarm on failed task exit codes (1, 75) or a scheduled `status --max-age-hours` |
 | GHCR image | stays private (FIT SDK license); mirror to a private ECR repository |
+
+**Database roles on RDS.** RDS has no init script, and migrations must not run as the master user.
+`garminagent db-bootstrap` logs in with `DB_MASTER_USERNAME` and `DB_MASTER_PASSWORD` (ECS fills
+them from the RDS-managed secret's `username` and `password` keys) at the host, port and database
+of `MIGRATION_DATABASE_URL`. It creates the owner (the user in `MIGRATION_DATABASE_URL`) and the app
+role (the user in `DATABASE_URL`, which must equal `DB_APP_ROLE`) with their URLs' passwords, gives
+both CONNECT, takes CONNECT away from PUBLIC, and lets the owner create in schema `public`. Then
+`db-upgrade` runs as the owner, as locally. To rotate a role's password, put the new one in its URL
+secret and run `db-bootstrap` again: it changes passwords only, and refuses an existing role with
+elevated attributes. The URLs need `?sslmode=verify-full`; the image's `PGSSLROOTCERT` points libpq
+at the RDS CA bundle. Locally the compose init script stays the bootstrap: there the owner
+`garminagent` is also the superuser, so `db-bootstrap` refuses (owner and master must differ).
 
 ## Troubleshooting
 

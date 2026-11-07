@@ -83,8 +83,11 @@ class BlobStore(Protocol):
 ```
 
 Keys: `{athlete_id}/activities/{activity_id}/{kind}-{sha256}.{ext}`, always passed through
-`validate_key`. Never built from Garmin-supplied names. An S3 implementation must keep all of this
-(ADR 0008, B3b).
+`validate_key`. Never built from Garmin-supplied names. `make_blob_store(settings)` picks the backend
+(`BLOB_BACKEND`): `LocalBlobStore` under `DATA_DIR/blobs`, or `S3BlobStore` (`storage/s3.py`, B3b) in
+`BLOB_S3_BUCKET`. Both pass one contract suite (`tests/storage/test_blobs.py`). `delete_prefix(p)`
+removes the key `p` and every key under `p/`, never a sibling such as `p0/`. Other backend failures
+raise `BlobStoreError`, an `OSError` carrying the operation, key and status only.
 
 ## CLI
 
@@ -94,6 +97,7 @@ Every command prints JSON on stdout and logs on stderr, with no health values in
 |---|---|
 | `version`, `config`, `db-check`, `auth-check` | Diagnostics. `config` hides secrets. `auth-check` makes two Garmin requests |
 | `db-upgrade` | Migrations; uses `MIGRATION_DATABASE_URL` |
+| `db-bootstrap` | Creates the owner and app roles where no init script runs (RDS), with `DB_MASTER_USERNAME`/`DB_MASTER_PASSWORD`; a re-run only sets passwords. Prints each role's outcome; exit 2 if refused, 1 on a database error |
 | `sync [--since DATE] [--max-requests N]` | One run |
 | `schedule [--interval-hours H]` | Local loop around the same run |
 | `status [--max-age-hours H]` | Counts, dates and stop reasons. Read-only; exits 1 if unhealthy with a max age |

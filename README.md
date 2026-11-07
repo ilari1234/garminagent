@@ -35,6 +35,7 @@ uv run garminagent config      # effective settings, secrets masked
 uv run garminagent db-check    # can we reach Postgres?
 uv run garminagent auth-check  # does the Garmin API key work? (prints only the token expiry)
 uv run garminagent db-upgrade  # apply migrations (as the schema owner)
+uv run garminagent db-bootstrap  # RDS only: create the owner and app roles with the master login
 uv run garminagent sync       # fetch new Garmin data (resumable; re-run until complete)
 uv run garminagent schedule   # sync now and then on a schedule (what the compose scheduler runs)
 uv run garminagent status     # sync health; --max-age-hours N for health checks
@@ -75,6 +76,8 @@ Postgres has two roles: `garminagent` owns the schema and runs migrations, and
 `garminagent_app` (what the app connects as) can only read and write data. The app role is
 created by `docker/postgres/init` when the database volume is first initialized; with an
 older volume, recreate it once with `docker compose down -v` (this deletes local data).
+On RDS, which has no init script, `db-bootstrap` creates both roles instead (docs/operations.md,
+Moving to AWS).
 There are no default passwords: set `POSTGRES_PASSWORD` and `APP_DB_PASSWORD` in `.env` first
 (see `.env.example`); compose refuses to start without them.
 
@@ -89,7 +92,11 @@ All settings come from environment variables (or `.env`):
 | `DATABASE_URL` | local Postgres as `garminagent_app`, no password | App connection (data access only), `postgresql+psycopg://…` |
 | `MIGRATION_DATABASE_URL` | local Postgres as `garminagent`, no password | Schema owner, used only by `db-upgrade` |
 | `DB_APP_ROLE` | `garminagent_app` | Role the migrations grant data access to |
-| `DATA_DIR` | `data` (`/data` in the image) | Raw activity files (`DATA_DIR/blobs`) |
+| `DB_REQUIRE_VERIFY_FULL` | `false` | `true` refuses a non-local database URL without `sslmode=verify-full` (set on AWS) |
+| `DB_MASTER_USERNAME`, `DB_MASTER_PASSWORD` | – | Secrets. RDS master login, used only by `db-bootstrap` |
+| `DATA_DIR` | `data` (`/data` in the image) | Raw activity files (`DATA_DIR/blobs`) with the local backend |
+| `BLOB_BACKEND` | `local` | `local` (under `DATA_DIR/blobs`) or `s3` |
+| `BLOB_S3_BUCKET` | – | Bucket for `BLOB_BACKEND=s3`; region and credentials come from the default AWS chain (the ECS task role), never from settings |
 | `SYNC_START_DATE` | two years ago | Oldest date to backfill (`YYYY-MM-DD`) |
 | `SYNC_MAX_REQUESTS` | `300` | Garmin requests per sync run (at 1 req/s, about 5 minutes; minimum 10) |
 | `SYNC_REFETCH_DAYS` | `3` | Recent days of daily summaries, sleep, HRV and weight re-fetched each run (Garmin revises them) |

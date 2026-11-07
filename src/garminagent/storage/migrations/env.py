@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from garminagent.config import get_settings
-from garminagent.storage.db import warn_if_insecure
+from garminagent.storage.db import check_tls
 from garminagent.storage.models import Base
 
 config = context.config
@@ -18,7 +18,7 @@ def _url() -> str:
 
 def run_migrations_online() -> None:
     url = _url()
-    warn_if_insecure(url)
+    check_tls(url)
     engine = create_engine(url, poolclass=pool.NullPool, connect_args={"connect_timeout": 5})
     try:
         with engine.connect() as connection:
