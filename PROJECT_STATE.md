@@ -9,19 +9,19 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 ## Status
 
 Phase 1 is done (reviewed and re-checked 2026-11-04). The phase 2 design (ADR 0013) is accepted; M6a
-is next on track A, after B3a. The AWS plan is merged (#10), B0 tooling is merged (#22), and B3a (the blob
-store seam) is in review on `b3a-blob-seam`.
+is next on track A and is unblocked. The AWS plan (#10), B0 tooling (#22) and B3a, the blob store seam
+(#25), are merged. B1 is next on track B.
 
 | Work | Status | Owner session / branch | Depends on | Blocked by |
 |---|---|---|---|---|
 | Phase 1: retrieve and store (M0–M5) | **Done** 2026-11-04: reviewed, H1 and M1–M4 fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md)) and re-checked ([review](docs/reviews/phase1-review.md#re-check-of-the-fixes-2026-11-04)); low findings open (OPEN_QUESTIONS 34) | `main` | | |
 | Real-data check | **Done** 2026-11-03, including its follow-ups | Owner's terminal | Phase 1 | |
-| Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)); M6a next | Track A session | Phase 1 review; B3a before M6a (code-only, may precede B1) | B3a merge (`b3a-blob-seam`) |
+| Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)); M6a next | Track A session | Phase 1 review; B3a (merged, #25) | |
 | AWS plan | **Merged** (#10) ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
 | AWS B0 tooling | **Merged** (#22): `infra/` skeleton, lock files, `infra.yml` checks, Dependabot, deny rules | | Plan merged | Owner adds the `infra-*` checks to the ruleset after their first green run |
 | AWS B1 foundation | Planned | Track B | B0 | Owner applies |
 | AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its verification |
-| AWS B3a seam | **Built, in review**: `make_blob_store(settings)` in `storage/blobs.py`; `cli.py` and `runner.py` use it; a test fails on any direct `LocalBlobStore(...)` in app code. Pure refactor: storage contract unchanged | Track B session; branch `b3a-blob-seam` | Nothing (code only; may land before B1, owner 2026-11-03) | Owner's review and merge; must merge before M6a |
+| AWS B3a seam | **Merged** (#25): `make_blob_store(settings)` in `storage/blobs.py`; `cli.py` and `runner.py` use it; a test fails on any direct `LocalBlobStore(...)` in app code. Pure refactor: storage contract unchanged | | Nothing (code only) | |
 | AWS B3b–d workload | Planned | Track B | B1; B3b after open M6 PRs; B3c after the real-data check and OPEN_QUESTIONS 8 | Owner applies |
 | Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | None | Core M6, M6f, B2 | Design |
 | Phase 4: delivery | **Outline only** | None | Phase 3; hosting depends on B3 | |
@@ -38,14 +38,14 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 
 1. ~~**Owner:** review and merge B0.~~ Merged (#22). **Owner:** after the first green `infra.yml` run on
    `main`, add `infra-terraform`, `infra-tflint` and `infra-trivy` to the `main` ruleset's required checks.
-   Then review and merge B3a (`b3a-blob-seam`).
+   B3a is merged (#25).
 2. ~~**Fresh session or subagent:** review phase 1 against `docs/plan.md` and `docs/contracts/`.~~ Done
    2026-11-04 ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md)): 1 high, 4 medium, 11 low.
    H1 and M1–M4 are fixed in #19 (ADR 0015) and a fresh subagent's re-check confirmed them: **phase 1 is
    done.** The re-check's N1–N3 are fixed in #21; low findings L1–L11 stay open (OPEN_QUESTIONS 34).
 3. ~~**Owner, own terminal:** run the real-data check.~~ Done 2026-11-03, with a second run for the follow-ups.
 4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. Set `ANALYTICS_TRIMP_B` in `.env` before M6b.
-5. **Track B:** B3a (built, in review), then B1, B2. **Track A:** M6a after B3a merges; its `analyze` step
+5. **Track B:** ~~B3a~~ merged (#25); next B1, then B2. **Track A:** M6a is unblocked; its `analyze` step
    gets the blob store from `make_blob_store(settings)`, never `LocalBlobStore(...)`.
 6. **Before phase 3 starts:** settle the design items in OPEN_QUESTIONS 10–18, and pass B2's retention
    verification before any real prompt.
@@ -53,14 +53,14 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 ## What exists today
 
 - **Code:** client, storage, sync, FIT parsing, wellness data, local scheduler, status, purge. App code gets
-  its blob store from `make_blob_store(settings)` (B3a, on `b3a-blob-seam`).
+  its blob store from `make_blob_store(settings)` (B3a, #25).
 - **Schema:** migrations 0001–0005. Next is 0006, owned by track A.
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
 - **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR, CodeQL.
   Since B0: Terraform fmt/validate/test, TFLint and a Trivy config scan of `infra/`, all without AWS
   credentials.
 - **Infra:** `infra/org`, `infra/account`, `infra/workload` with no resources yet (B0, #22).
-- **Merged PRs:** #2–#22 (#9 closed in favour of #14). Dependabot's #1 was closed.
+- **Merged PRs:** #2–#22 and #25 (#9 closed in favour of #14). Dependabot's #1 was closed.
 - **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
   `docs/garmin-personal-api/openapi.json`.
 
