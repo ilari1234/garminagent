@@ -26,7 +26,7 @@ each take a raw payload and return `Normalized[T]` with `records` and a `skipped
   method becomes NULL).
 - Thresholds share one range table, `THRESHOLD_RANGES` (bpm, W, m/s), used for activity fields, HR
   zones and manual input alike. `getlactateThresholdSpeed` is converted from the spec's cm/ms to m/s
-  (×10); this unit is not yet confirmed on real data (OPEN_QUESTIONS 38).
+  (×10); the owner's account never sends this field, so the unit is unconfirmed (ADR 0013).
 - `renormalize(sessions, athlete, dataset)` re-parses the newest stored version of each record for
   `activities`, `daily_summaries`, `sleep`, `hrv` or `weight` into its table: no Garmin requests,
   inserts and updates only.

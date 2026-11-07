@@ -12,7 +12,7 @@ Follow-ups from the first real run: which keys the raw sleep payloads carry (sle
 was never stored), how far apart consecutive samples are (for phase 2's gap rule), and per-sport
 coverage of laps, HR and power.
 
-M6a follow-up (OPEN_QUESTIONS 38): threshold coverage. For each threshold field in the raw activity
+M6a follow-up (ADR 0013, real-data findings): threshold coverage. For each threshold field in the raw activity
 responses, how many activities carry it, how many distinct values it takes (a profile value copied
 into every activity stays at one or two), and which unit or scale its values fit; plus what the
 normalized columns, the HR zone history and the threshold timeline hold, as counts per code.
@@ -477,7 +477,7 @@ def _timeline(session: Session) -> dict[str, dict[str, dict[str, int]]]:
 
 
 def thresholds_section(session: Session) -> dict[str, Any]:
-    """Threshold coverage (OPEN_QUESTIONS 38): raw activity fields, the normalized columns they
+    """Threshold coverage (ADR 0013, real-data findings): raw activity fields, the normalized columns they
     fill, the HR zone history and the threshold timeline rows per source, type and sport."""
     latest = _latest_activities(session)
     return {

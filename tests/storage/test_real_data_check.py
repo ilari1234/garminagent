@@ -162,7 +162,7 @@ def test_report_on_an_empty_database(app_sessions: sessionmaker[Session]) -> Non
     assert report["by_sport"] == {}
 
 
-# --- M6a threshold coverage (OPEN_QUESTIONS 38) ---
+# --- M6a threshold coverage (ADR 0013, real-data findings) ---
 
 # Distinctive synthetic values; none may reach the report.
 LTHR_RUN, LTHR_RUN_OLD, LTHR_RIDE = 163.0, 151.0, 158.0
