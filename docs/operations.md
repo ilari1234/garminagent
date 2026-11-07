@@ -96,7 +96,9 @@ at Garmin can't write files off.
 `scripts/real_data_check.py` reports what sync stored as counts, byte sizes, day counts and
 Garmin's key names: runs and synced ranges, file and parse outcomes, rows per table, which unit
 weigh-ins arrive in, the size of `activity_sample`, which keys the raw sleep payloads carry, how far
-apart samples are, and laps, HR and power coverage per sport. It prints no measured values, dates or
+apart samples are, laps, HR and power coverage per sport, and threshold coverage (which threshold
+fields the activities carry, which unit or scale their values fit, the HR zone history and the
+threshold timeline rows per source). It prints no measured values, dates or
 IDs, so its output can be shared with a development session. Read-only, no Garmin requests. The
 script isn't in the image; mount it into the app container (use the repository's absolute path):
 
