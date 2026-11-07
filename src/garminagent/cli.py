@@ -17,7 +17,7 @@ from garminagent.log import configure_logging
 from garminagent.runner import ALREADY_RUNNING, run_schedule, run_sync_once
 from garminagent.runner import status as sync_status
 from garminagent.storage import migrate
-from garminagent.storage.blobs import LocalBlobStore
+from garminagent.storage.blobs import make_blob_store
 from garminagent.storage.db import make_engine, make_session_factory
 from garminagent.storage.models import Athlete
 from garminagent.storage.repository import purge_athlete
@@ -95,7 +95,7 @@ def purge_data(
         if athlete_id is None:
             log.info("nothing to purge")
             return
-        result = purge_athlete(sessions, LocalBlobStore(settings.blob_dir), athlete_id)
+        result = purge_athlete(sessions, make_blob_store(settings), athlete_id)
     except SQLAlchemyError as exc:
         log.error("purge failed: %s", exc.__class__.__name__)
         raise typer.Exit(code=1) from exc
@@ -198,7 +198,7 @@ def parse_fit_files() -> None:
         with sessions() as session:
             athlete_id = session.scalar(select(Athlete.id).order_by(Athlete.id).limit(1))
         if athlete_id is not None:
-            parse_pending_fit_files(sessions, LocalBlobStore(settings.blob_dir), athlete_id, report)
+            parse_pending_fit_files(sessions, make_blob_store(settings), athlete_id, report)
     except SQLAlchemyError as exc:
         log.error("parse-fit failed: database error %s", exc.__class__.__name__)
         raise typer.Exit(code=1) from exc

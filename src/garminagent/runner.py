@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from garminagent.config import Settings
 from garminagent.fit import PARSER_VERSION
 from garminagent.garmin import GarminAuthError, GarminClient
-from garminagent.storage.blobs import LocalBlobStore
+from garminagent.storage.blobs import make_blob_store
 from garminagent.storage.db import make_engine, make_session_factory, sync_lock
 from garminagent.storage.models import Athlete
 from garminagent.storage.repository import (
@@ -77,7 +77,7 @@ def run_sync_once(
                     report = Syncer(
                         client,
                         sessions,
-                        LocalBlobStore(settings.blob_dir),
+                        make_blob_store(settings),
                         start=start,
                         today=today,
                         max_requests=max_requests or settings.sync_max_requests,

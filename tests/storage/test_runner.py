@@ -9,10 +9,12 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from typer.testing import CliRunner
 
+from garminagent import runner
 from garminagent.cli import app
 from garminagent.config import Settings
 from garminagent.garmin import GarminAuthError, GarminClient
 from garminagent.runner import ALREADY_RUNNING, AUTH_FAILED, EXIT_ERROR, EXIT_OK, run_sync_once, status
+from garminagent.storage.blobs import BlobStore, make_blob_store
 from garminagent.storage.db import make_engine, sync_lock
 from garminagent.storage.models import SyncRun
 from garminagent.sync import INTERNAL_ERROR
@@ -61,6 +63,21 @@ def test_run_is_recorded_with_counts_only(
     assert run.requests == outcome.report.requests if outcome.report else False
     assert set(run.counts) >= {"daily_summaries", "activities"}
     assert all(isinstance(v, int) for counts in run.counts.values() for v in counts.values())
+
+
+def test_run_gets_its_blob_store_from_the_factory(
+    settings: Settings, fake_garmin: FakeGarmin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[Settings] = []
+
+    def recording(given: Settings) -> BlobStore:
+        calls.append(given)
+        return make_blob_store(given)
+
+    monkeypatch.setattr(runner, "make_blob_store", recording)
+    assert run_sync_once(settings).stopped is None
+    assert calls == [settings]
+    assert any(path.is_file() for path in settings.blob_dir.rglob("*"))  # the fake account has activity files
 
 
 def test_second_run_skips_while_one_holds_the_lock(
