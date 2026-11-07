@@ -1,7 +1,8 @@
 """Blob storage for raw files (activity zips and FIT files).
 
 `BlobStore` is the seam for AWS: `LocalBlobStore` writes under a directory now; an S3
-implementation can replace it without touching callers.
+implementation can replace it without touching callers. App code gets its store from
+`make_blob_store(settings)`, never by constructing one, so choosing a backend stays in one place.
 
 Keys are built by our own code from IDs and content hashes; they are still validated so a
 bug can never write outside the store. Files are private to the owner (0600, directories 0700)
@@ -14,6 +15,8 @@ import secrets
 import shutil
 from pathlib import Path
 from typing import Protocol
+
+from garminagent.config import Settings
 
 # Segments start with a letter or digit, so "..", "." and hidden names are impossible.
 KEY_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}(/[A-Za-z0-9][A-Za-z0-9._-]{0,127}){0,15}")
@@ -32,6 +35,15 @@ def validate_key(key: str) -> str:
     if not KEY_PATTERN.fullmatch(key):
         raise ValueError(f"invalid blob key: {key!r}")
     return key
+
+
+def make_blob_store(settings: Settings) -> BlobStore:
+    """The blob store for the configured backend.
+
+    Only the local store exists today. The S3 store (ADR 0008, stage B3b) adds its backend
+    setting here, so callers such as `sync`, `parse-fit` and `purge-data` don't change.
+    """
+    return LocalBlobStore(settings.blob_dir)
 
 
 class LocalBlobStore:
