@@ -1,6 +1,6 @@
 # Project state
 
-**The single source of truth for where the project stands.** Last updated 2026-11-07 (M6a merged; threshold coverage check). Update this file
+**The single source of truth for where the project stands.** Last updated 2026-11-07 (real-data threshold findings; OPEN_QUESTIONS 39). Update this file
 in any PR that changes status, architecture, schema, contracts or conventions (ADR 0012).
 
 Goal: AI agents that create, update and evaluate training plans (off-season, half marathon, marathon,
@@ -9,15 +9,15 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 ## Status
 
 Phase 1 is done (reviewed and re-checked 2026-11-04). The phase 2 design (ADR 0013) is accepted; M6a
-is merged (#27) and ran once on real data; its Garmin unit questions wait on the threshold
-coverage check (OPEN_QUESTIONS 38). The AWS plan (#10), B0 tooling (#22) and B3a, the blob store seam
+is merged (#27). The real-data check settled its Garmin questions (ADR 0013, *Real-data findings for
+M6b*); M6b waits on the owner's threshold choices (OPEN_QUESTIONS 39). The AWS plan (#10), B0 tooling (#22) and B3a, the blob store seam
 (#25), are merged. B1 is next on track B.
 
 | Work | Status | Owner session / branch | Depends on | Blocked by |
 |---|---|---|---|---|
 | Phase 1: retrieve and store (M0–M5) | **Done** 2026-11-04: reviewed, H1 and M1–M4 fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md)) and re-checked ([review](docs/reviews/phase1-review.md#re-check-of-the-fixes-2026-11-04)); low findings open (OPEN_QUESTIONS 34) | `main` | | |
 | Real-data check | **Done** 2026-11-03, including its follow-ups | Owner's terminal | Phase 1 | |
-| Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)). **M6a merged (#27)**: `hr_zones`, `athlete_zones`, `athlete_threshold` with resolver, activity threshold columns, `renormalize`, `thresholds set/unset/list`, sport groups, `analyze` step; migration 0006. Choices recorded in ADR 0013, *M6a as built* | Track A session | Phase 1 review; B3a (merged, #25) | Owner runs the real-data check's threshold section (OPEN_QUESTIONS 38); then M6b |
+| Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)). **M6a merged (#27)**: `hr_zones`, `athlete_zones`, `athlete_threshold` with resolver, activity threshold columns, `renormalize`, `thresholds set/unset/list`, sport groups, `analyze` step; migration 0006. Choices recorded in ADR 0013, *M6a as built* | Track A session | Phase 1 review; B3a (merged, #25) | Owner: threshold inputs (OPEN_QUESTIONS 39), deleted activities (36), `ANALYTICS_TRIMP_B`; then M6b |
 | AWS plan | **Merged** (#10) ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
 | AWS B0 tooling | **Merged** (#22): `infra/` skeleton, lock files, `infra.yml` checks, Dependabot, deny rules | | Plan merged | Owner adds the `infra-*` checks to the ruleset after their first green run |
 | AWS B1 foundation | Planned | Track B | B0 | Owner applies |
@@ -48,10 +48,12 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. Set `ANALYTICS_TRIMP_B` in `.env` before M6b.
 5. **Track B:** ~~B3a~~ merged (#25); next B1, then B2. B3b rebases after the M6a PR. **Track A:** M6a is
    merged (#27). The owner's first `renormalize activities` and `analyze` (2026-11-07) re-parsed all
-   558 activities with none skipped and left no sport key unmapped; HR zones came back. **Owner:**
-   rebuild, run the real-data check (its new `thresholds` section) in your own terminal and share it,
-   so OPEN_QUESTIONS 38's unit questions are settled before M6b; also run
-   `renormalize daily_summaries`. M6b is next on track A.
+   558 activities with none skipped and left no sport key unmapped. The real-data check's `thresholds`
+   section (#29) then settled M6a's Garmin questions: no threshold speed or FTP ever arrives, IF is a
+   fraction, activity LTHR is measured, and zones carry max HR and LTHR but no resting HR (ADR 0013).
+   **Owner, before M6b:** choose the threshold inputs (OPEN_QUESTIONS 39), decide on deleted
+   activities (36), set `ANALYTICS_TRIMP_B`, and run `renormalize daily_summaries`. M6b is next on
+   track A.
 6. **Before phase 3 starts:** settle the design items in OPEN_QUESTIONS 10–18, and pass B2's retention
    verification before any real prompt.
 

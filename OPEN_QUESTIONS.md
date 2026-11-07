@@ -1,6 +1,6 @@
 # Open questions
 
-Everything unresolved or deferred, as of 2026-11-04. Each item has enough context to pick up cold.
+Everything unresolved or deferred, as of 2026-11-07. Each item has enough context to pick up cold.
 **Owner** means only the project owner can answer or do it. Remove an item when it's settled, and
 record the answer in an ADR if it's a decision.
 
@@ -119,22 +119,17 @@ ADR 0007 sets principles only.
 37. **Migration owner role locally.** Since #19 the owner password no longer reaches the app
     containers (compose blanks it, ADR 0015), but the owner role is still the Postgres superuser.
     Decide whether to also create a non-superuser schema owner in `docker/postgres/init`.
-38. **M6a's unverified Garmin semantics**, to check with the owner's first `renormalize activities`
-    and `analyze` on real data, before M6b relies on them (counts only):
-    - `getlactateThresholdSpeed` is converted from the spec's cm/ms to m/s. If it actually arrives in
-      m/s, every value lands outside 0.5–10 m/s and becomes NULL: `threshold_speed` rows would be 0.
-    - `intensityFactor` is read as the spec's fraction (0.80); a percentage would become NULL.
-    - `lactateThresholdBpm` and `maxFtp` on an activity may be the profile value at the time rather
-      than something measured in it. Either way they are change points in the timeline; LTHR counts
-      for the activity's own sport group, FTP only from rides, threshold speed only from runs.
-    - HR zones are requested with `generateDefaults=false`, so only configured zones come back. If
-      the owner's account answers with an empty list, Garmin zones contribute nothing and thresholds
-      fall back to activity values (`hr_zones.records` = 0 in the sync counts).
-
-    First real run (2026-11-07): `renormalize activities` re-parsed 558 activities, none skipped;
-    `analyze` gave 2 `garmin_zones` and 2 `activity` threshold rows, so zones do come back with
-    `generateDefaults=false`. Two activity rows over two years suggest profile values. The counts
-    can't tell the speed unit or IF scale apart from the fields being absent, so the real-data
-    check now has a `thresholds` section: per raw field the activities carrying it, distinct values
-    per sport group, which unit (`threshold_speed_unit`) or scale (`intensity_factor_scale`) the
-    values fit, the stored columns, the zone history and the timeline rows per source, all counts.
+39. **Threshold inputs for M6b's HR load (owner, before M6b).** HR load needs max HR, resting HR
+    and LTHR on each activity's date. The real-data check (2026-11-07, ADR 0013 *Real-data findings
+    for M6b*) shows two gaps:
+    - **Resting HR:** no threshold source has it, because Garmin's zones leave it empty while
+      resting-HR auto-update is on. Options: (1) derive it from `daily_summary.resting_hr` as the
+      lowest-precedence source, for example the 7-day mean ending the day before the activity (the
+      window *Recovery* already uses); (2) set it by hand with `thresholds set resting_hr`, one value
+      per period.
+    - **History before 2026-11-07,** when zones were first fetched: there is no max HR, and LTHR
+      exists only for runs from the first detection on. Options: (1) set max HR and LTHR by hand from
+      the first synced day (`thresholds set max_hr … --from <first day>`, the same for `lthr`), so
+      older sessions use today's values; (2) estimate max HR from the highest sample HR seen, which
+      sensor spikes make noisy; (3) accept no HR load before 2026-11-07, so fitness means something
+      only 126 days later.

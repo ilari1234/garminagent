@@ -152,9 +152,39 @@ definition above.
   `make_blob_store(settings)` (B3a).
 - **Migration 0006 grants explicitly**, and a test checks the grants with 0001's default
   privileges revoked.
-- Unverified on real data and listed in OPEN_QUESTIONS 38: the threshold speed unit, the IF scale,
-  whether activity threshold fields are profile values, and what `generateDefaults=false` returns
-  for the owner's account.
+- What these fields hold on real data is recorded below, under *Real-data findings for M6b*.
+
+## Real-data findings for M6b (2026-11-07)
+
+The real-data check's `thresholds` section (#29) ran on the owner's database after M6a's first
+`renormalize activities` and `analyze`. It settles the Garmin questions M6a left open (former
+OPEN_QUESTIONS 38). Counts only:
+
+- **Activity threshold fields** across 558 activities: `lactateThresholdBpm` arrives on 3 runs with
+  2 distinct values. These are the runs where the watch detected a lactate threshold, not a profile
+  value copied into every activity, and they are change points in the timeline as built.
+  `getlactateThresholdSpeed` and `maxFtp` never arrive, and no other spelling of a threshold key
+  does either. The cm/ms conversion therefore stays unconfirmed, but no phase 2 metric uses
+  threshold speed (running load is HR-only).
+- **`intensityFactor` and `trainingStressScore`** arrive on 15 ski sessions, which are exactly the
+  ski sessions with power. Every IF value is on the fraction scale, so `garmin_if` parsing is right.
+  These 15 sessions are what `analyze --check` can compare power load against.
+- **HR zones** (`generateDefaults=false`) return one zone set: DEFAULT, method `HR_MAX`, all five
+  floors, max HR and LTHR. Resting HR is null because the account has Garmin's resting-HR
+  auto-update on (`restingHrAutoUpdateUsed`, a key M6a doesn't parse). The timeline therefore holds
+  max HR and LTHR for `all` from 2026-11-07 on, and nothing from zones before that.
+- **No ride has power**, which confirms the 2026-11-03 finding.
+
+Consequences for M6b. HR load needs max HR, resting HR and LTHR valid on the activity date (HR reserve
+fraction, scaled so 1 h at LTHR = 100):
+
+- **Resting HR has no threshold source.** Zones don't carry it and activities never do. The daily
+  summaries carry it on every synced day. Choosing the source is open (OPEN_QUESTIONS 39).
+- **History before the first zones fetch has no max HR**, and LTHR only for runs from the first
+  detection on. Without more input, HR load would be "none" for nearly all of the two-year history,
+  and fitness needs 126 days of it (see *Consequences*). How to fill it is open (OPEN_QUESTIONS 39).
+- **Ski power load needs a ski FTP set by hand** (`thresholds set ftp … --sport ski`). Without one,
+  ski sessions use HR load like everything else.
 
 ## Alternatives considered
 
