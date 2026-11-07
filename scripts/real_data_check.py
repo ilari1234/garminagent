@@ -12,6 +12,11 @@ Follow-ups from the first real run: which keys the raw sleep payloads carry (sle
 was never stored), how far apart consecutive samples are (for phase 2's gap rule), and per-sport
 coverage of laps, HR and power.
 
+M6a follow-up (OPEN_QUESTIONS 38): threshold coverage. For each threshold field in the raw activity
+responses, how many activities carry it, how many distinct values it takes (a profile value copied
+into every activity stays at one or two), and which unit or scale its values fit; plus what the
+normalized columns, the HR zone history and the threshold timeline hold, as counts per code.
+
 Prints one JSON object on stdout: counts, byte sizes, day counts and Garmin's key names only. No
 measured value, date, ID or free text, so the output can be shared with a development session.
 Read-only; makes no Garmin requests.
@@ -31,13 +36,17 @@ from typing import Any, cast
 from sqlalchemy import ColumnElement, func, select, text
 from sqlalchemy.orm import Session
 
+from garminagent.analytics.sports import GROUPS, sport_group
 from garminagent.config import get_settings
+from garminagent.normalize import CM_PER_MS_TO_MPS, THRESHOLD_RANGES
 from garminagent.storage.db import make_engine, make_session_factory
 from garminagent.storage.models import (
     Activity,
     ActivityFile,
     ActivityLap,
     ActivitySample,
+    AthleteThreshold,
+    AthleteZones,
     DailySummary,
     HrvSummary,
     RawPayload,
@@ -46,7 +55,7 @@ from garminagent.storage.models import (
     SyncRun,
     WeightDaily,
 )
-from garminagent.sync import SLEEP, WEIGHT
+from garminagent.sync import ACTIVITIES, HR_ZONES, SLEEP, WEIGHT
 
 RECENT_RUNS = 10
 # Key paths are reported two levels deep (`sleepScores.overall`), capped in number in case a
@@ -74,6 +83,20 @@ MEASURE_COLUMNS: dict[str, tuple[Any, list[Any]]] = {
     "hrv_summary": (HrvSummary, [HrvSummary.last_night_avg, HrvSummary.status]),
     "weight_daily": (WeightDaily, [WeightDaily.weight_kg, WeightDaily.body_fat_pct]),
 }
+# Raw activity fields normalize reads into threshold columns, and the column each one fills.
+THRESHOLD_FIELDS = {
+    "lactateThresholdBpm": "lactate_threshold_hr",
+    "getlactateThresholdSpeed": "threshold_speed_mps",
+    "maxFtp": "ftp_w",
+    "trainingStressScore": "garmin_tss",
+    "intensityFactor": "garmin_if",
+}
+# Raw activity key names that look threshold-related, so a spelling other than the spec's shows.
+THRESHOLD_KEY_HINTS = ("threshold", "ftp", "stress", "intensity")
+# normalize keeps intensityFactor in 0-3 (a fraction, 0.80); 3-300 would be a percentage.
+IF_FRACTION_MAX = 3.0
+IF_PERCENT_MAX = 300.0
+ZONE_FIELDS = ("max_hr", "resting_hr", "lthr")
 CURSOR_FOR_TABLE = {
     "daily_summary": "daily_summaries",
     "sleep_summary": "sleep",
@@ -302,6 +325,170 @@ def by_sport_section(session: Session) -> dict[str, Any]:
     }
 
 
+def _number(value: object) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
+def _latest_activities(session: Session) -> list[dict[str, object]]:
+    """The newest raw version of each activity, as renormalize picks it."""
+    rows = session.execute(
+        select(RawPayload.payload)
+        .where(RawPayload.endpoint == ACTIVITIES)
+        .order_by(RawPayload.last_fetched_at.desc(), RawPayload.id.desc())
+    ).all()
+    seen: set[object] = set()
+    latest: list[dict[str, object]] = []
+    for (payload,) in rows:
+        for item in reversed(_objects(payload)):  # within one response the last item wins
+            key = item.get("activityId")
+            if key is None or key in seen:
+                continue
+            seen.add(key)
+            latest.append(item)
+    return latest
+
+
+def _speed_unit(value: float, counts: Counter[str]) -> None:
+    low, high = THRESHOLD_RANGES["threshold_speed"]
+    as_cm_per_ms = low <= value * CM_PER_MS_TO_MPS <= high  # what normalize assumes
+    as_m_per_s = low <= value <= high
+    labels = {(True, True): "both", (True, False): "cm_per_ms_only", (False, True): "m_per_s_only"}
+    counts["plausible_as_" + labels.get((as_cm_per_ms, as_m_per_s), "neither")] += 1
+
+
+def _if_scale(value: float, counts: Counter[str]) -> None:
+    if 0 <= value <= IF_FRACTION_MAX:
+        counts["fraction_0_to_3"] += 1
+    elif IF_FRACTION_MAX < value <= IF_PERCENT_MAX:
+        counts["percent_3_to_300"] += 1
+    else:
+        counts["other"] += 1
+
+
+def _type_key(item: dict[str, object]) -> str | None:
+    ref = item.get("activityType")
+    key = cast(dict[str, object], ref).get("typeKey") if isinstance(ref, dict) else None
+    return key if isinstance(key, str) else None
+
+
+def _raw_threshold_fields(latest: list[dict[str, object]]) -> dict[str, Any]:
+    fields: dict[str, Counter[str]] = {name: Counter() for name in THRESHOLD_FIELDS}
+    not_a_number: Counter[str] = Counter()
+    distinct: dict[str, dict[str, set[float]]] = {name: {} for name in THRESHOLD_FIELDS}
+    speed_units: Counter[str] = Counter()
+    if_scale: Counter[str] = Counter()
+    hint_keys: Counter[str] = Counter()
+    for item in latest:
+        group = sport_group(_type_key(item))
+        for key, value in item.items():
+            if value is not None and any(hint in key.lower() for hint in THRESHOLD_KEY_HINTS):
+                hint_keys[key] += 1
+        for name in THRESHOLD_FIELDS:
+            value = item.get(name)
+            if value is None:
+                continue
+            number = _number(value)
+            if number is None:
+                not_a_number[name] += 1
+                continue
+            fields[name][group] += 1
+            distinct[name].setdefault(group, set()).add(number)
+            if name == "getlactateThresholdSpeed":
+                _speed_unit(number, speed_units)
+            elif name == "intensityFactor":
+                _if_scale(number, if_scale)
+    return {
+        "fields": {
+            name: {
+                "present": sum(fields[name].values()),
+                "not_a_number": not_a_number[name],
+                "per_group": {g: fields[name][g] for g in GROUPS if fields[name][g]},
+                # One or two distinct values across many activities suggests a profile value.
+                "distinct_values_per_group": {g: len(distinct[name][g]) for g in GROUPS if g in distinct[name]},
+            }
+            for name in THRESHOLD_FIELDS
+        },
+        "threshold_speed_unit": dict(sorted(speed_units.items())),
+        "intensity_factor_scale": dict(sorted(if_scale.items())),
+        "threshold_like_keys": dict(sorted(hint_keys.items())[:MAX_KEYS]),
+    }
+
+
+def _stored_threshold_columns(session: Session) -> dict[str, dict[str, int]]:
+    columns = list(THRESHOLD_FIELDS.values())
+    rows = session.execute(
+        select(Activity.sport, *(func.count(getattr(Activity, column)) for column in columns)).group_by(Activity.sport)
+    ).all()
+    stored: dict[str, Counter[str]] = {column: Counter() for column in columns}
+    for sport, *counts in rows:
+        for column, n in zip(columns, counts, strict=True):
+            stored[column][sport_group(sport)] += n
+    return {column: {g: stored[column][g] for g in GROUPS if stored[column][g]} for column in columns}
+
+
+def _zones(session: Session) -> dict[str, Any]:
+    history: dict[str, dict[str, Any]] = {}
+    for zone in session.scalars(select(AthleteZones)).all():
+        entry = history.setdefault(
+            zone.sport, {"rows": 0, "methods": Counter[str](), "with_all_floors": 0, **dict.fromkeys(ZONE_FIELDS, 0)}
+        )
+        entry["rows"] += 1
+        entry["methods"][zone.training_method or "unknown"] += 1
+        floors = (zone.zone1_floor, zone.zone2_floor, zone.zone3_floor, zone.zone4_floor, zone.zone5_floor)
+        entry["with_all_floors"] += all(f is not None for f in floors)
+        for f in ZONE_FIELDS:
+            entry[f] += getattr(zone, f) is not None
+    newest = session.scalar(
+        select(RawPayload.payload)
+        .where(RawPayload.endpoint == HR_ZONES)
+        .order_by(RawPayload.last_fetched_at.desc(), RawPayload.id.desc())
+        .limit(1)
+    )
+    items = _objects(cast(object, newest)) if isinstance(newest, list) else []
+    keys: Counter[str] = Counter()
+    for item in items:
+        _key_paths(item, "", 1, keys)
+    return {
+        "raw_responses": _count(session, RawPayload, RawPayload.endpoint == HR_ZONES),
+        "newest_response_items": len(items),
+        "newest_response_keys": dict(sorted(keys.items())[:MAX_KEYS]),
+        "history_per_sport": {
+            sport: {
+                "rows": e["rows"],
+                "methods": dict(sorted(e["methods"].items())),
+                "with_all_floors": e["with_all_floors"],
+                **{f"with_{f}": e[f] for f in ZONE_FIELDS},
+            }
+            for sport, e in sorted(history.items())
+        },
+    }
+
+
+def _timeline(session: Session) -> dict[str, dict[str, dict[str, int]]]:
+    rows = session.execute(
+        select(AthleteThreshold.source, AthleteThreshold.value_type, AthleteThreshold.sport, func.count())
+        .group_by(AthleteThreshold.source, AthleteThreshold.value_type, AthleteThreshold.sport)
+        .order_by(AthleteThreshold.source, AthleteThreshold.value_type, AthleteThreshold.sport)
+    ).all()
+    timeline: dict[str, dict[str, dict[str, int]]] = {}
+    for source, value_type, sport, n in rows:
+        timeline.setdefault(source, {}).setdefault(value_type, {})[sport] = n
+    return timeline
+
+
+def thresholds_section(session: Session) -> dict[str, Any]:
+    """Threshold coverage (OPEN_QUESTIONS 38): raw activity fields, the normalized columns they
+    fill, the HR zone history and the threshold timeline rows per source, type and sport."""
+    latest = _latest_activities(session)
+    return {
+        "raw_activities": len(latest),
+        **_raw_threshold_fields(latest),
+        "stored_columns_per_group": _stored_threshold_columns(session),
+        "zones": _zones(session),
+        "timeline_rows": _timeline(session),
+    }
+
+
 def samples_section(session: Session) -> dict[str, Any]:
     per_activity = (
         select(ActivitySample.activity_id, func.count().label("n")).group_by(ActivitySample.activity_id).subquery()
@@ -346,6 +533,7 @@ def collect(session: Session, today: date | None = None) -> dict[str, Any]:
         "sleep_keys": sleep_keys_section(session),
         "sample_gaps_s": gaps_section(session),
         "by_sport": by_sport_section(session),
+        "thresholds": thresholds_section(session),
     }
 
 

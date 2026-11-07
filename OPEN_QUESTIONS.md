@@ -130,3 +130,11 @@ ADR 0007 sets principles only.
     - HR zones are requested with `generateDefaults=false`, so only configured zones come back. If
       the owner's account answers with an empty list, Garmin zones contribute nothing and thresholds
       fall back to activity values (`hr_zones.records` = 0 in the sync counts).
+
+    First real run (2026-11-07): `renormalize activities` re-parsed 558 activities, none skipped;
+    `analyze` gave 2 `garmin_zones` and 2 `activity` threshold rows, so zones do come back with
+    `generateDefaults=false`. Two activity rows over two years suggest profile values. The counts
+    can't tell the speed unit or IF scale apart from the fields being absent, so the real-data
+    check now has a `thresholds` section: per raw field the activities carrying it, distinct values
+    per sport group, which unit (`threshold_speed_unit`) or scale (`intensity_factor_scale`) the
+    values fit, the stored columns, the zone history and the timeline rows per source, all counts.
