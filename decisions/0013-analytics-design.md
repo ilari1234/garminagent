@@ -3,7 +3,8 @@
 **Status:** Accepted (owner's decision, 2026-11-03). The phase 2 planning session produced this on
 2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
 the owner's answers are recorded below. M6a is built (2026-11-07); its choices where this ADR left
-room are recorded under *M6a as built*. M6b–M6f are not built yet.
+room are recorded under *M6a as built*, and the owner's answers on M6b's threshold inputs under
+*Real-data findings for M6b*. M6b–M6f are not built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -179,12 +180,34 @@ Consequences for M6b. HR load needs max HR, resting HR and LTHR valid on the act
 fraction, scaled so 1 h at LTHR = 100):
 
 - **Resting HR has no threshold source.** Zones don't carry it and activities never do. The daily
-  summaries carry it on every synced day. Choosing the source is open (OPEN_QUESTIONS 39).
+  summaries carry it on every synced day. Decided below.
 - **History before the first zones fetch has no max HR**, and LTHR only for runs from the first
   detection on. Without more input, HR load would be "none" for nearly all of the two-year history,
-  and fitness needs 126 days of it (see *Consequences*). How to fill it is open (OPEN_QUESTIONS 39).
+  and fitness needs 126 days of it (see *Consequences*). Decided below.
 - **Ski power load needs a ski FTP set by hand** (`thresholds set ftp … --sport ski`). Without one,
   ski sessions use HR load like everything else.
+
+**Owner's answers (2026-11-07)**, which close former OPEN_QUESTIONS 36 and 39:
+
+- **Resting HR for HR load comes from the daily summaries.** The resolver takes the mean of
+  `daily_summary.resting_hr` over the 7 days ending the day before the activity. It is the
+  lowest-precedence source, after manual, Garmin zones and activity values. It is computed when
+  resolving, not stored as timeline rows, and each metrics row records the value it used. With
+  fewer than 3 days in the window there is no resting HR, so that session gets no HR load, never a
+  guess. The day before, because the activity day's summary is still partial when a morning
+  session syncs.
+- **The first known value also holds before it was first seen.** For a date before any row of a
+  type, the resolver uses that type's earliest row for the group, else for `all`. This backward
+  fill has the lowest precedence, so it never hides a dated value. In practice, history before the
+  first zones fetch uses that fetch's max HR and LTHR, and run LTHR before the first detection uses
+  the first detection. Metrics rows that used a backward-filled value carry `thresholds_backfilled`,
+  so agents can tell older load is approximate. History isn't filled by hand: a manual value
+  outranks Garmin zones on every later date, so it would freeze over later Garmin updates.
+- **Activities deleted or merged at Garmin stay in the local tables; there is no reconciliation.**
+  The owner practically never deletes activities, so phantom load is negligible. Revisit if that
+  changes (phase 1 review L10).
+- **`ANALYTICS_TRIMP_B` is set** in the owner's `.env` (2026-11-07). Its value stays out of the
+  repository, as decided on 2026-11-03.
 
 ## Alternatives considered
 

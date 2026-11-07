@@ -113,23 +113,16 @@ ADR 0007 sets principles only.
     or activities? Since #19 they become NULL at parsing either way; rows stored earlier keep them
     until re-normalized: `garminagent renormalize <dataset>` (M6a) rewrites them. Counting out-of-range
     values in the real-data check would show whether that matters.
-36. **Activities deleted or merged at Garmin** are never removed locally; sync only upserts. Decide
-    before M6b and M6c whether to reconcile, for example by flagging activities missing from a
-    refetched range, since phantom activities would inflate load.
 37. **Migration owner role locally.** Since #19 the owner password no longer reaches the app
     containers (compose blanks it, ADR 0015), but the owner role is still the Postgres superuser.
     Decide whether to also create a non-superuser schema owner in `docker/postgres/init`.
-39. **Threshold inputs for M6b's HR load (owner, before M6b).** HR load needs max HR, resting HR
-    and LTHR on each activity's date. The real-data check (2026-11-07, ADR 0013 *Real-data findings
-    for M6b*) shows two gaps:
-    - **Resting HR:** no threshold source has it, because Garmin's zones leave it empty while
-      resting-HR auto-update is on. Options: (1) derive it from `daily_summary.resting_hr` as the
-      lowest-precedence source, for example the 7-day mean ending the day before the activity (the
-      window *Recovery* already uses); (2) set it by hand with `thresholds set resting_hr`, one value
-      per period.
-    - **History before 2026-11-07,** when zones were first fetched: there is no max HR, and LTHR
-      exists only for runs from the first detection on. Options: (1) set max HR and LTHR by hand from
-      the first synced day (`thresholds set max_hr … --from <first day>`, the same for `lthr`), so
-      older sessions use today's values; (2) estimate max HR from the highest sample HR seen, which
-      sensor spikes make noisy; (3) accept no HR load before 2026-11-07, so fitness means something
-      only 126 days later.
+40. **Lab test results as input (owner, timing).** The owner occasionally tests thresholds, zones
+    and max HR with lactate, or with lactate and gas exchange. For now, enter the results with
+    `thresholds set` (`lthr`, `max_hr`, `threshold_speed`, `ftp`, with `--from` the test date and
+    `--sport`), or put them in Garmin Connect, where the daily zones fetch picks up the HR values.
+    A full result (LT1/LT2 or VT1/VT2 with HR and speed or power, VO2max, the lab's zone floors)
+    would need its own small component: a dated `athlete_test` table and a `garminagent test add`
+    command that feeds the threshold timeline. Not an agent: agents only read derived metrics
+    (M6f), and a lab report's free text must not reach a model. LT1 is what a 3-zone split needs,
+    which is the main reason to build it. Decide when, and whether a test outranks newer Garmin
+    values (as manual input does) or only until Garmin's next change.
