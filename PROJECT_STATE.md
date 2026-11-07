@@ -1,6 +1,6 @@
 # Project state
 
-**The single source of truth for where the project stands.** Last updated 2026-11-07 (M6b threshold inputs decided; M6b unblocked). Update this file
+**The single source of truth for where the project stands.** Last updated 2026-11-07 (B3b PR, after M6b's threshold inputs were decided). Update this file
 in any PR that changes status, architecture, schema, contracts or conventions (ADR 0012).
 
 Goal: AI agents that create, update and evaluate training plans (off-season, half marathon, marathon,
@@ -11,7 +11,7 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 Phase 1 is done (reviewed and re-checked 2026-11-04). The phase 2 design (ADR 0013) is accepted; M6a
 is merged (#27). The real-data check settled its Garmin questions (ADR 0013, *Real-data findings for
 M6b*), and the owner decided M6b's threshold inputs there; M6b is unblocked. The AWS plan (#10), B0 tooling (#22) and B3a, the blob store seam
-(#25), are merged. B1 is next on track B.
+(#25), are merged; B3b, the app code for the AWS workload, is in review. B1 is next on track B.
 
 | Work | Status | Owner session / branch | Depends on | Blocked by |
 |---|---|---|---|---|
@@ -23,7 +23,8 @@ M6b*), and the owner decided M6b's threshold inputs there; M6b is unblocked. The
 | AWS B1 foundation | Planned | Track B | B0 | Owner applies |
 | AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its verification |
 | AWS B3a seam | **Merged** (#25): `make_blob_store(settings)` in `storage/blobs.py`; `cli.py` and `runner.py` use it; a test fails on any direct `LocalBlobStore(...)` in app code. Pure refactor: storage contract unchanged | | Nothing (code only) | |
-| AWS B3b–d workload | Planned | Track B | B1; B3b after open M6 PRs; B3c after the real-data check and OPEN_QUESTIONS 8 | Owner applies |
+| AWS B3b app code | **In review**: `storage/s3.py` (`S3BlobStore`, `BLOB_BACKEND`, `BLOB_S3_BUCKET`), `db-bootstrap` (owner and app roles with the RDS master login), RDS CA bundle in the image, `DB_REQUIRE_VERIFY_FULL`; new dependency `boto3`. No migration, no `infra/` change. Choices and what B3c/B3d must provide: ADR 0008, *B3b implementation* | Track B | B3a; M6a (merged) | Owner review |
+| AWS B3c–d workload | Planned | Track B | B1, B3b; B3c after OPEN_QUESTIONS 8 | Owner applies |
 | Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | None | Core M6, M6f, B2 | Design |
 | Phase 4: delivery | **Outline only** | None | Phase 3; hosting depends on B3 | |
 | Repo as orchestrator (this file and friends) | **Merged** (#8) | | | |
@@ -46,7 +47,8 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
    done.** The re-check's N1–N3 are fixed in #21; low findings L1–L11 stay open (OPEN_QUESTIONS 34).
 3. ~~**Owner, own terminal:** run the real-data check.~~ Done 2026-11-03, with a second run for the follow-ups.
 4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. `ANALYTICS_TRIMP_B` set 2026-11-07.
-5. **Track B:** ~~B3a~~ merged (#25); next B1, then B2. B3b rebases after the M6a PR. **Track A:** M6a is
+5. **Track B:** ~~B3a~~ merged (#25); B3b is in review (**owner:** review it); next B1, then B2. M6b
+   rebases over B3b's `cli.py`, `config.py` and `uv.lock` changes, or B3b over M6b. **Track A:** M6a is
    merged (#27). The owner's first `renormalize activities` and `analyze` (2026-11-07) re-parsed all
    558 activities with none skipped and left no sport key unmapped. The real-data check's `thresholds`
    section (#29) then settled M6a's Garmin questions: no threshold speed or FTP ever arrives, IF is a
@@ -62,13 +64,15 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 - **Code:** client, storage, sync, FIT parsing, wellness data, local scheduler, status, purge. App code gets
   its blob store from `make_blob_store(settings)` (B3a, #25). M6a: HR zones history, the
   threshold timeline and resolver (`garminagent.analytics`), `renormalize`, `analyze`, `thresholds`.
+  In review (B3b): the S3 blob store, `db-bootstrap`, the RDS CA bundle and `DB_REQUIRE_VERIFY_FULL`.
 - **Schema:** migrations 0001–0006 on `main`. The next one is 0007, owned by track A.
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
 - **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR, CodeQL.
   Since B0: Terraform fmt/validate/test, TFLint and a Trivy config scan of `infra/`, all without AWS
   credentials.
 - **Infra:** `infra/org`, `infra/account`, `infra/workload` with no resources yet (B0, #22).
-- **Merged PRs:** #2–#22 and #25 (#9 closed in favour of #14). Dependabot's #1 was closed.
+- **Merged PRs:** #2–#31 except #24, which is open (#9 closed in favour of #14). Dependabot's #1 was
+  closed.
 - **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
   `docs/garmin-personal-api/openapi.json`.
 

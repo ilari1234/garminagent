@@ -256,6 +256,9 @@ also bound to a GitHub environment that only `main` can deploy to.
 None of this adds a migration. B3b touches `cli.py`, `config.py`, `pyproject.toml` and `uv.lock`, which
 M6 PRs also touch; it rebases after them.
 
+**B3b is built** (2026-11-07). What it asks of B3c and B3d (task role permissions, environment, the
+master secret's keys) is listed in ADR 0008, *B3b implementation*.
+
 ## Terraform layout and state
 
 ```

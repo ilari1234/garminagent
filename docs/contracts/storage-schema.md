@@ -30,6 +30,10 @@ columns and types; this file says what they mean and who may rely on what. Reaso
    Almost all measures are nullable, so consumers must handle NULL.
 7. **Roles:** the app role has DML only. A new table's migration must grant it explicitly (from 0006;
    0002–0005 relied on 0001's default privileges), and test it in `tests/storage/test_privileges.py`.
+   Roles come from `docker/postgres/init` locally and from `db-bootstrap` on RDS, where the owner is
+   not a superuser: it holds CONNECT and `USAGE, CREATE ON SCHEMA public WITH GRANT OPTION`, nothing
+   more. Migrations must work with exactly that (no extensions, no `ALTER` of objects the owner
+   didn't create); `tests/storage/test_bootstrap.py` runs them all that way.
 8. **Migrations are linear, numbered and run as the owner.** Next: 0007. Only track A adds them.
 
 ## Tables

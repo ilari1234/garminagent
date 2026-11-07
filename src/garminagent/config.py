@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import make_url
 
@@ -24,6 +24,8 @@ DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://garminagent@127.0.0.1:543
 # Postgres role names are interpolated into GRANT statements, so only plain identifiers.
 MIN_SYNC_REQUESTS = 10
 ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+# S3 general purpose bucket names: lowercase letters, digits, dots and hyphens, 3-63 characters.
+BUCKET_NAME = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
 class Settings(BaseSettings):
@@ -39,6 +41,13 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(DEFAULT_DATABASE_URL)
     migration_database_url: SecretStr = SecretStr(DEFAULT_MIGRATION_DATABASE_URL)
     db_app_role: str = "garminagent_app"
+    # Fail instead of warning when a non-local database is reached without sslmode=verify-full.
+    # Set on AWS, where the URLs are typed in by hand; off locally, where compose has no TLS.
+    db_require_verify_full: bool = False
+    # `db-bootstrap` only: the RDS master login, from the RDS-managed secret's JSON keys. Host,
+    # port and database come from MIGRATION_DATABASE_URL.
+    db_master_username: SecretStr | None = None
+    db_master_password: SecretStr | None = None
     # Sync: history starts at SYNC_START_DATE (default: two years back); each run makes at most
     # SYNC_MAX_REQUESTS Garmin requests, so a long backfill spreads over several runs.
     sync_start_date: date | None = None
@@ -52,6 +61,10 @@ class Settings(BaseSettings):
     schedule_interval_hours: float = Field(default=6.0, ge=1.0)
     schedule_catch_up_minutes: int = Field(default=15, ge=5)
     data_dir: Path = Path("data")
+    # Raw files: `local` under DATA_DIR/blobs, or `s3` in BLOB_S3_BUCKET. S3 takes its region and
+    # credentials from the default AWS chain (the ECS task role); no AWS keys are configured here.
+    blob_backend: Literal["local", "s3"] = "local"
+    blob_s3_bucket: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["text", "json"] = "text"
 
@@ -67,11 +80,24 @@ class Settings(BaseSettings):
             raise ValueError("DB_APP_ROLE must be a lowercase identifier (letters, digits, underscore)")
         return value
 
+    @field_validator("blob_s3_bucket")
+    @classmethod
+    def _bucket_is_valid(cls, value: str | None) -> str | None:
+        if value is not None and not BUCKET_NAME.fullmatch(value):
+            raise ValueError("BLOB_S3_BUCKET must be a valid S3 bucket name")
+        return value
+
+    @model_validator(mode="after")
+    def _s3_needs_a_bucket(self) -> Settings:
+        if self.blob_backend == "s3" and self.blob_s3_bucket is None:
+            raise ValueError("BLOB_BACKEND=s3 needs BLOB_S3_BUCKET")
+        return self
+
     @property
     def blob_dir(self) -> Path:
         return self.data_dir / "blobs"
 
-    def redacted(self) -> dict[str, str | float | int | None]:
+    def redacted(self) -> dict[str, str | float | int | bool | None]:
         """Settings for display: the API key is masked and database passwords hidden."""
         return {
             "garmin_personal_api_key": "set" if self.garmin_personal_api_key else None,
@@ -82,6 +108,9 @@ class Settings(BaseSettings):
             "database_url": _hide_password(self.database_url),
             "migration_database_url": _hide_password(self.migration_database_url),
             "db_app_role": self.db_app_role,
+            "db_require_verify_full": self.db_require_verify_full,
+            "db_master_username": "set" if self.db_master_username else None,
+            "db_master_password": "set" if self.db_master_password else None,
             "sync_start_date": self.sync_start_date.isoformat() if self.sync_start_date else None,
             "sync_max_requests": self.sync_max_requests,
             "sync_refetch_days": self.sync_refetch_days,
@@ -89,6 +118,8 @@ class Settings(BaseSettings):
             "schedule_interval_hours": self.schedule_interval_hours,
             "schedule_catch_up_minutes": self.schedule_catch_up_minutes,
             "data_dir": str(self.data_dir),
+            "blob_backend": self.blob_backend,
+            "blob_s3_bucket": self.blob_s3_bucket,
             "log_level": self.log_level,
             "log_format": self.log_format,
         }
