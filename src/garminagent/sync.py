@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.analytics import ANALYTICS, run_analytics
 from garminagent.fit import PARSER_VERSION, FitParseError, parse_fit
 from garminagent.garmin import (
     RANGE_LIMITS,
@@ -39,6 +40,7 @@ from garminagent.normalize import (
     Normalized,
     parse_activities,
     parse_daily_summaries,
+    parse_hr_zones,
     parse_hrv,
     parse_sleep,
     parse_weight,
@@ -53,6 +55,7 @@ from garminagent.storage.repository import (
     get_cursor,
     replace_activity_samples,
     save_activity_file,
+    save_hr_zones,
     save_raw_payload,
     set_cursor,
     set_file_status,
@@ -71,6 +74,10 @@ SLEEP = "sleep"
 HRV = "hrv"
 WEIGHT = "weight"
 ACTIVITIES = "activities"
+HR_ZONES = "hr_zones"
+# The zones endpoint answers with today's settings only, so one key holds them all: unchanged
+# content refreshes `last_fetched_at`, changed content adds a raw_payload row.
+HR_ZONES_REQUEST_KEY = "current"
 ACTIVITY_FILES = "activity_files"
 FIT_FILES = "fit_files"
 DEFAULT_HISTORY_DAYS = 730
@@ -169,12 +176,20 @@ class Syncer:
         self._report = SyncReport()
 
     def run(self) -> SyncReport:
-        """Sync daily summaries, then activities, then activity files, then parse downloaded FIT
-        files. Raises GarminAuthError (nothing can work without the key); every other stop is
-        recorded in the report. Parsing needs no Garmin requests, so it runs even after a stop."""
+        """Sync HR zones, daily datasets, activities and activity files, then parse downloaded
+        FIT files and run the analytics. Raises GarminAuthError (nothing can work without the
+        key); every other stop is recorded in the report. Parsing and analytics need no Garmin
+        requests, so they run even after a stop, and analytics never changes how a run ends."""
         with self._sessions.begin() as session:
             athlete = ensure_athlete(session)
         try:
+            try:
+                self._sync_hr_zones(athlete)
+            except GarminApiError as exc:
+                if not 400 <= exc.status < 500:
+                    raise
+                log.warning("hr_zones: Garmin answered HTTP %d; skipping it this run", exc.status)
+                self._report.add(HR_ZONES, "errors")
             for dataset in self._range_datasets():
                 try:
                     self._sync_range_dataset(athlete, dataset)
@@ -217,6 +232,7 @@ class Syncer:
             log.error("FIT parsing stopped after unexpected error: %s", exc.__class__.__name__)
             if self._report.stopped in (None, "budget"):
                 self._report.stopped = INTERNAL_ERROR
+        self._report.counts[ANALYTICS] = run_analytics(self._sessions, athlete)
         log.info(
             "sync %s after %d requests: %s",
             "complete" if self._report.complete else f"stopped ({self._report.stopped})",
@@ -264,6 +280,31 @@ class Syncer:
                 upsert_weight,
             ),
         ]
+
+    def _sync_hr_zones(self, athlete: int) -> None:
+        """Today's HR zone settings, at most once per day: the cursor's end is the last day they
+        were fetched. A malformed payload still counts as fetched (its raw copy is kept, and
+        asking again today won't change it); a refusal leaves the cursor for the next run."""
+        with self._sessions() as session:
+            fetched = get_cursor(session, athlete, HR_ZONES)
+        if fetched is not None and fetched.end >= self._today:
+            return
+        self._spend()
+        # Configured zones only: Garmin's generated defaults (age-based) would outrank the
+        # thresholds found in activities (ADR 0013 precedence) without being the athlete's.
+        payload = self._client.get_heart_rate_zones(generate_defaults=False)
+        parsed = parse_hr_zones(payload)
+        with self._sessions.begin() as session:
+            raw_id = save_raw_payload(
+                session, athlete, HR_ZONES, HR_ZONES_REQUEST_KEY, 204 if payload is None else 200, payload
+            )
+            changed = save_hr_zones(session, athlete, parsed.records, raw_id, self._today)
+            today = SyncRange(self._today, self._today)
+            set_cursor(session, athlete, HR_ZONES, SyncRange(fetched.start, self._today) if fetched else today)
+        self._report.add(HR_ZONES, "records", len(parsed.records))
+        self._report.add(HR_ZONES, "changed", changed)
+        self._report.add(HR_ZONES, "skipped", parsed.skipped)
+        log.info("hr_zones: %d sports, %d changed (requests %d/%d)", len(parsed.records), changed, *self._used())
 
     def _sync_range_dataset(self, athlete: int, dataset: RangeDataset) -> None:
         for chunk, cursor in self._chunks(athlete, dataset.name, self._refetch_days, dataset.chunk_days):

@@ -2,7 +2,8 @@
 
 **Status:** Accepted (owner's decision, 2026-11-03). The phase 2 planning session produced this on
 2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
-the owner's answers are recorded below. Nothing is built yet.
+the owner's answers are recorded below. M6a is built (2026-11-07); its choices where this ADR left
+room are recorded under *M6a as built*. M6b–M6f are not built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -110,6 +111,50 @@ precedence: manual, then Garmin zones, then activity values; a value holds until
   stays visible; their HR load understates muscular strain.
 - **The weight-unit check runs with the real-data check** (`scripts/real_data_check.py`), before M6a's
   first `renormalize` and `analyze --check`.
+
+## M6a as built (2026-11-07)
+
+Choices made where the decision above left room. They change no milestone, table or metric
+definition above.
+
+- **Threshold sports are `all` or a sport group** (`run`, `ride`, `ski`, `strength`, `other`).
+  Garmin's zone sport DEFAULT maps to `all`, RUNNING to `run`, CYCLING to `ride`; SWIMMING and
+  ROWING map to no group and stay in `athlete_zones` only (counted as `zones_sports_skipped`).
+- **Precedence is by source first, then specificity:** manual for the group, manual for `all`,
+  Garmin zones for the group, Garmin zones for `all`, activity values. A manual value for `all`
+  therefore outranks Garmin's running zones. Within a source, the latest row on or before the date
+  holds; a NULL in a later zones row is not a change.
+- **Activity values feed only the sports they describe:** LTHR counts for the activity's own group;
+  FTP only from rides (for `ride`), threshold speed only from runs (for `run`). Garmin's FTP is a
+  cycling value, and power exists only in ski sessions: carrying it to skiing would produce a wrong
+  power load where M6b would otherwise fall back to HR load. The owner can set a ski FTP by hand.
+- **Zones are requested with `generateDefaults=false`:** generated (age-based) defaults would
+  outrank activity values without being the athlete's.
+- **Zone history starts at the first fetch.** `valid_from` is the sync day a change was first
+  seen; a second change the same day replaces that day's row. Dates before the first fetch fall
+  back to activity values.
+- **Derived threshold rows are rebuilt by each `analyze`** from `athlete_zones` and `activity`,
+  touching only rows that differ (counts `thresholds_inserted`, `_updated`, `_deleted`). Manual
+  rows are never read or written by analytics.
+- **`thresholds unset`** was added next to `set` and `list`: without it, a mistaken manual value
+  would outrank Garmin's values for good.
+- **One range table for every source** (`THRESHOLD_RANGES` in `normalize.py`): LTHR 80–230 bpm, max
+  HR 100–250, resting HR 25–120, FTP 30–700 W, threshold speed 0.5–10 m/s. Activity and zone values
+  outside become NULL; manual input is refused with exit code 2. `getlactateThresholdSpeed` is
+  converted from the spec's cm/ms to m/s. Garmin's TSS (0–2000) and IF (0–3, a fraction) are
+  stored as `garmin_tss` and `garmin_if` for cross-checks only.
+- **`renormalize` covers all five range datasets and activities**, not only activities, so the
+  range checks of ADR 0015 also reach old daily summaries. The newest stored version of each record
+  wins; it inserts and updates, never deletes, as a sync does.
+- **`renormalize` and `analyze` hold the sync lock** and print `already_running` if a sync holds it,
+  so they can't interleave with a sync writing the same rows.
+- **The `analyze` step needs no blob store in M6a**; when a later part reads files it gets one from
+  `make_blob_store(settings)` (B3a).
+- **Migration 0006 grants explicitly**, and a test checks the grants with 0001's default
+  privileges revoked.
+- Unverified on real data and listed in OPEN_QUESTIONS 38: the threshold speed unit, the IF scale,
+  whether activity threshold fields are profile values, and what `generateDefaults=false` returns
+  for the owner's account.
 
 ## Alternatives considered
 

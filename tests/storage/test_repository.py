@@ -5,8 +5,9 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.analytics.thresholds import set_manual
 from garminagent.garmin.files import parse_activity_file
-from garminagent.normalize import DailySummaryRecord, parse_activities, parse_daily_summaries
+from garminagent.normalize import DailySummaryRecord, HrZonesRecord, parse_activities, parse_daily_summaries
 from garminagent.storage.blobs import LocalBlobStore
 from garminagent.storage.models import Activity, ActivityFile, Athlete, DailySummary, RawPayload, SyncCursor
 from garminagent.storage.repository import (
@@ -15,6 +16,7 @@ from garminagent.storage.repository import (
     get_cursor,
     purge_athlete,
     save_activity_file,
+    save_hr_zones,
     save_raw_payload,
     set_cursor,
     upsert_activities,
@@ -142,6 +144,8 @@ def test_purge_removes_all_rows_and_blobs(app_sessions: sessionmaker[Session], b
         upsert_daily_summaries(session, athlete, parse_daily_summaries(load_fixture("daily_summaries.json")).records)
         save_activity_file(session, blobs, athlete, parse_activity_file(42, make_zip({"a.fit": make_fit()})), T0)
         set_cursor(session, athlete, "activities", SyncRange(date(2026, 10, 1), date(2026, 10, 8)))
+        save_hr_zones(session, athlete, [HrZonesRecord(sport="DEFAULT", max_hr=190)], None, date(2026, 10, 8))
+        set_manual(session, athlete, "ftp", "ride", date(2026, 10, 1), 250.0)
 
     result = purge_athlete(app_sessions, blobs, athlete)
 
@@ -157,6 +161,8 @@ def test_purge_removes_all_rows_and_blobs(app_sessions: sessionmaker[Session], b
         "hrv_summary": 0,
         "weight_daily": 0,
         "sync_run": 0,
+        "athlete_zones": 1,
+        "athlete_threshold": 1,
     }
     assert result.blobs == 2
     with app_sessions() as session:

@@ -40,6 +40,10 @@ uv run garminagent schedule   # sync now and then on a schedule (what the compos
 uv run garminagent status     # sync health; --max-age-hours N for health checks
 uv run garminagent sync --since 2019-01-01  # extend history backwards
 uv run garminagent parse-fit  # (re)parse downloaded FIT files; no Garmin requests
+uv run garminagent renormalize activities  # re-parse stored responses after an upgrade; no Garmin requests
+uv run garminagent analyze    # sport groups and the threshold timeline from stored data
+uv run garminagent thresholds list --at 2026-11-01 --sport run  # thresholds in effect, with sources
+uv run garminagent thresholds set ftp 250 --sport ride  # a manual value outranks Garmin's
 uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)
 ```
 
@@ -51,16 +55,17 @@ docker compose run --rm app status   # last run, synced ranges, pending files
 docker compose run --rm app sync     # one run now
 ```
 
-`sync` fetches daily summaries (including stress and Body Battery), sleep, HRV and weight,
-then activities, then activity files, within a request budget per run (`SYNC_MAX_REQUESTS`,
+`sync` fetches HR zones (once a day), daily summaries (including stress and Body Battery), sleep,
+HRV and weight, then activities, then activity files, within a request budget per run (`SYNC_MAX_REQUESTS`,
 at least 10). A long backfill therefore takes several runs; each run
 continues where the last one stopped and prints a JSON report (counts only). Exit codes:
 `0` complete or stopped at the budget, `75` Garmin rate limited (try later), `1` error.
 Command output goes to stdout, logs to stderr.
 
 At the end of every run, `sync` also parses newly downloaded FIT files into per-second
-samples and laps (no GPS). `parse-fit` does only that step, e.g. after an upgrade that
-improves the parser.
+samples and laps (no GPS), then runs the `analyze` step (counts in the report under
+`analytics`; it never fails the run). `parse-fit` and `analyze` each do only their step. See
+docs/operations.md for thresholds and `renormalize`.
 
 FIT decoding uses Garmin's `garmin-fit-sdk` under the *FIT Protocol License Agreement*; by
 using this project you use the SDK under those terms. Built images contain the SDK and must

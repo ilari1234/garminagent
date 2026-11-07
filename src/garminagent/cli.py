@@ -4,29 +4,122 @@ import json
 import logging
 import signal
 import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from enum import StrEnum
 
 import typer
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 
 from garminagent import __version__
+from garminagent.analytics import analyze as run_analyze
+from garminagent.analytics.thresholds import (
+    THRESHOLD_SPORTS,
+    VALUE_TYPES,
+    ThresholdOutOfRange,
+    ThresholdTimeline,
+    check_range,
+    load_rows,
+    set_manual,
+    unset_manual,
+)
 from garminagent.config import MIN_SYNC_REQUESTS, get_settings
 from garminagent.garmin import GarminClient, GarminError
 from garminagent.log import configure_logging
+from garminagent.renormalize import DATASETS as RENORMALIZE_DATASETS
+from garminagent.renormalize import renormalize as run_renormalize
 from garminagent.runner import ALREADY_RUNNING, run_schedule, run_sync_once
 from garminagent.runner import status as sync_status
 from garminagent.storage import migrate
 from garminagent.storage.blobs import make_blob_store
-from garminagent.storage.db import make_engine, make_session_factory
+from garminagent.storage.db import make_engine, make_session_factory, sync_lock
 from garminagent.storage.models import Athlete
-from garminagent.storage.repository import purge_athlete
+from garminagent.storage.repository import ensure_athlete, purge_athlete
 from garminagent.sync import FIT_FILES, SyncReport, parse_pending_fit_files
 
 # Tracebacks must never print local variables: the transport holds the Authorization header in
 # one. Typer's current default is False; pin it so a default change can't leak secrets.
 app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_show_locals=False)
+thresholds_app = typer.Typer(
+    no_args_is_help=True,
+    pretty_exceptions_show_locals=False,
+    help="The threshold timeline: manual values outrank Garmin's zones, which outrank activity values.",
+)
+app.add_typer(thresholds_app, name="thresholds")
 log = logging.getLogger("garminagent")
+
+
+# Choices as enums, so typer validates them and lists them in --help. Checked against the
+# code's own tuples below, so the two can't drift apart.
+class RenormalizeDataset(StrEnum):
+    activities = "activities"
+    daily_summaries = "daily_summaries"
+    sleep = "sleep"
+    hrv = "hrv"
+    weight = "weight"
+
+
+class ValueTypeChoice(StrEnum):
+    ftp = "ftp"
+    lthr = "lthr"
+    max_hr = "max_hr"
+    resting_hr = "resting_hr"
+    threshold_speed = "threshold_speed"
+
+
+class SportChoice(StrEnum):
+    all = "all"
+    run = "run"
+    ride = "ride"
+    ski = "ski"
+    strength = "strength"
+    other = "other"
+
+
+if (
+    tuple(RenormalizeDataset) != tuple(RENORMALIZE_DATASETS)
+    or tuple(ValueTypeChoice) != VALUE_TYPES
+    or tuple(SportChoice) != THRESHOLD_SPORTS
+):
+    raise ImportError("CLI choices are out of step with the analytics constants")
+
+
+@contextmanager
+def _athlete_sessions(command: str, *, locked: bool = False) -> Generator[tuple[sessionmaker[Session], int]]:
+    """Sessions as the app role and the athlete's id. Any error ends the command with exit code
+    1 and the exception class only, never a traceback: messages and frames may quote stored
+    data. With `locked`, the sync lock is held throughout, so the command can't interleave with
+    a sync writing the same rows; if a sync holds it, the command prints `already_running` and
+    exits 0, as `sync` does."""
+    engine = make_engine(get_settings().database_url.get_secret_value())
+    sessions = make_session_factory(engine)
+    try:
+        with sync_lock(engine) if locked else _no_lock() as acquired:
+            if not acquired:
+                log.info("a sync is running; run %s again when it has finished", command)
+                typer.echo(json.dumps({"stopped": ALREADY_RUNNING}, indent=2))
+                raise typer.Exit(code=0)
+            with sessions.begin() as session:
+                athlete_id = ensure_athlete(session)
+            yield sessions, athlete_id
+    except typer.Exit:
+        raise  # click's Exit is a RuntimeError; let deliberate exits through
+    except SQLAlchemyError as exc:
+        log.error("%s failed: database error %s", command, exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:
+        log.error("%s failed: unexpected error %s", command, exc.__class__.__name__)
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+
+
+@contextmanager
+def _no_lock() -> Generator[bool]:
+    yield True
 
 
 @app.callback()
@@ -205,3 +298,107 @@ def parse_fit_files() -> None:
     finally:
         engine.dispose()
     typer.echo(json.dumps(report.counts.get(FIT_FILES, {}), indent=2))
+
+
+@app.command()
+def renormalize(
+    dataset: RenormalizeDataset = typer.Argument(..., help="Which normalized table to rebuild."),  # noqa: B008
+) -> None:
+    """Re-parse stored Garmin responses into a normalized table; the newest stored version of
+    each record wins. Makes no Garmin requests and needs no API key. Use after an upgrade that
+    reads new fields, e.g. `renormalize activities` for M6a's threshold columns. Prints counts
+    only."""
+    with _athlete_sessions("renormalize", locked=True) as (sessions, athlete_id):
+        counts = run_renormalize(sessions, athlete_id, dataset.value)
+    typer.echo(json.dumps(counts, indent=2))
+
+
+@app.command()
+def analyze() -> None:
+    """Run the analytics on stored data, as every sync does after FIT parsing: sport groups and
+    the threshold timeline (M6a). Makes no Garmin requests. Prints counts, plus Garmin sport
+    keys not yet grouped. Exit code 1 if a part failed."""
+    with _athlete_sessions("analyze", locked=True) as (sessions, athlete_id):
+        result = run_analyze(sessions, athlete_id)
+    typer.echo(json.dumps({"counts": result.counts, "unmapped_sport_keys": result.unmapped_keys}, indent=2))
+    if result.counts.get("errors"):
+        raise typer.Exit(code=1)
+
+
+@thresholds_app.command("set")
+def thresholds_set(
+    value_type: ValueTypeChoice = typer.Argument(..., help="Which threshold."),  # noqa: B008
+    value: float = typer.Argument(..., help="bpm for HR values, W for ftp, m/s for threshold_speed."),
+    sport: SportChoice = typer.Option(SportChoice.all, "--sport", help="Sport group; `all` applies to every group."),  # noqa: B008
+    valid_from: datetime | None = typer.Option(  # noqa: B008
+        None, "--from", formats=["%Y-%m-%d"], help="First day the value holds (default: today, UTC)."
+    ),
+) -> None:
+    """Set a manual threshold from a date. It outranks Garmin's values from that date until the
+    next manual value, or until `thresholds unset` removes it. A value outside the plausible
+    range is refused with exit code 2."""
+    kind = value_type.value
+    day = valid_from.date() if valid_from else datetime.now(UTC).date()
+    try:
+        check_range(kind, value)
+    except ThresholdOutOfRange as exc:
+        log.error("refused: %s", exc)  # names the range, never the value
+        raise typer.Exit(code=2) from exc
+    with _athlete_sessions("thresholds set") as (sessions, athlete_id), sessions.begin() as session:
+        set_manual(session, athlete_id, kind, sport.value, day, value)
+    typer.echo(json.dumps({"value_type": kind, "sport": sport.value, "valid_from": day.isoformat()}, indent=2))
+
+
+@thresholds_app.command("unset")
+def thresholds_unset(
+    value_type: ValueTypeChoice = typer.Argument(..., help="Which threshold."),  # noqa: B008
+    valid_from: datetime = typer.Option(..., "--from", formats=["%Y-%m-%d"], help="The manual value's first day."),  # noqa: B008
+    sport: SportChoice = typer.Option(SportChoice.all, "--sport", help="Sport group."),  # noqa: B008
+) -> None:
+    """Remove one manual threshold, so the next source in precedence applies again. Exit code 1
+    if there was no such manual value."""
+    kind = value_type.value
+    with _athlete_sessions("thresholds unset") as (sessions, athlete_id), sessions.begin() as session:
+        removed = unset_manual(session, athlete_id, kind, sport.value, valid_from.date())
+    typer.echo(json.dumps({"removed": removed}, indent=2))
+    if not removed:
+        raise typer.Exit(code=1)
+
+
+@thresholds_app.command("list")
+def thresholds_list(
+    at: datetime | None = typer.Option(  # noqa: B008
+        None, "--at", formats=["%Y-%m-%d"], help="Also show the values in effect on this date."
+    ),
+    sport: SportChoice = typer.Option(SportChoice.all, "--sport", help="Sport group for --at."),  # noqa: B008
+) -> None:
+    """Print the threshold timeline and, with --at, the values in effect on a date for a sport
+    group. Values go to stdout (your terminal) only, never to logs. Garmin-derived rows are
+    refreshed by `analyze`, which every sync runs."""
+    with _athlete_sessions("thresholds list") as (sessions, athlete_id), sessions() as session:
+        rows = load_rows(session, athlete_id)
+    out: dict[str, object] = {
+        "timeline": [
+            {
+                "value_type": r.value_type,
+                "sport": r.sport,
+                "source": r.source,
+                "valid_from": r.valid_from.isoformat(),
+                "value": r.value,
+            }
+            for r in rows
+        ]
+    }
+    if at is not None:
+        resolved = ThresholdTimeline(rows).at(at.date(), sport.value)
+        out["at"] = {
+            "date": at.date().isoformat(),
+            "sport": sport.value,
+            "values": {
+                kind: None
+                if r is None
+                else {"value": r.value, "source": r.source, "sport": r.sport, "valid_from": r.valid_from.isoformat()}
+                for kind, r in resolved.items()
+            },
+        }
+    typer.echo(json.dumps(out, indent=2))
