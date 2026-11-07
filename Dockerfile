@@ -29,7 +29,14 @@ FROM python:3.15-slim@sha256:e97b88e416c3c01eb427b21fd8cd3ebf006e6ee38afcfcc3cae
 # The app never installs packages at runtime, so drop the base image's pip and its bundled
 # wheel: less attack surface, and they carry vendored libraries (urllib3, msgpack, ...) that
 # Trivy flags and we can't patch.
-RUN python -m pip uninstall --yes --quiet pip \
+# zlib1g comes from trixie-security until the base image ships it: CVE-2026-76844 and
+# CVE-2026-85091 are fixed in 1:1.3.dfsg+really1.3.1-1+deb13u1, and the newest
+# python:3.15-slim digest (2026-11-05) still has +b1. Drop the apt lines once Dependabot
+# bumps the digest to one that has deb13u1 (`dpkg-query -W zlib1g` in the image).
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends --only-upgrade zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall --yes --quiet pip \
     && rm -rf /usr/local/lib/python3.*/ensurepip \
     && groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir /data && chown app:app /data
