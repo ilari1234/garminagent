@@ -45,3 +45,19 @@ updates:
       day: monday
     cooldown:
       default-days: 7
+
+  # AWS provider version and lock-file hashes in the three Terraform roots. The Terraform,
+  # TFLint and ruleset pins in infra.yml aren't tracked here (monthly routine in SECURITY.md).
+  - package-ecosystem: terraform
+    directories:
+      - /infra/org
+      - /infra/account
+      - /infra/workload
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      terraform:
+        patterns: ["*"]

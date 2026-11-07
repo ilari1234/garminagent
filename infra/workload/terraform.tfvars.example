@@ -1,0 +1,2 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Never commit the real file.
+account_id = "<12-digit member account ID>"

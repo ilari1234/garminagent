@@ -26,3 +26,20 @@ Thumbs.db
 
 # Garmin's Personal API spec: keep a local copy here if useful; not redistributed (ADR 0014)
 docs/garmin-personal-api/openapi.json
+
+# Terraform (state and plans can hold account IDs, ARNs and endpoints; real tfvars and
+# backend.hcl name the accounts). The *.example files are committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+*.tfvars
+*.tfvars.json
+backend.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
+crash.*.log

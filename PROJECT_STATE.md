@@ -8,19 +8,19 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 
 ## Status
 
-The AWS plan is accepted (2026-11-03); B0 is next. The phase 2 plan waits on the owner's review.
-No code beyond phase 1 is committed.
+Phase 1 is done (reviewed and re-checked 2026-11-04). The phase 2 design (ADR 0013) is accepted; M6a
+is next on track A, after B3a. The AWS plan is merged (#10); B0 tooling is in review on `infra-b0`.
 
 | Work | Status | Owner session / branch | Depends on | Blocked by |
 |---|---|---|---|---|
 | Phase 1: retrieve and store (M0–M5) | **Done** 2026-11-04: reviewed, H1 and M1–M4 fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md)) and re-checked ([review](docs/reviews/phase1-review.md#re-check-of-the-fixes-2026-11-04)); low findings open (OPEN_QUESTIONS 34) | `main` | | |
 | Real-data check | **Done** 2026-11-03, including its follow-ups | Owner's terminal | Phase 1 | |
 | Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)); M6a next | Track A session | Phase 1 review; B3a before M6a (code-only, may precede B1) | |
-| AWS plan | **Accepted** 2026-11-03 ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | AWS planning session; branch `docs/aws-deployment` | | Owner's merge |
-| AWS B0 tooling | **Next** | Track B session | Plan merged | |
+| AWS plan | **Merged** (#10) ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
+| AWS B0 tooling | **Built, in review**: `infra/` skeleton, lock files, `infra.yml` checks, Dependabot, deny rules | Track B session; branch `infra-b0` | Plan merged | Owner's review and merge; then owner adds the `infra-*` checks to the ruleset |
 | AWS B1 foundation | Planned | Track B | B0 | Owner applies |
 | AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its verification |
-| AWS B3a–d workload | Planned | Track B | B1; B3a before M6a, B3b after open M6 PRs; B3c after the real-data check and OPEN_QUESTIONS 8 | Owner applies |
+| AWS B3a–d workload | Planned | Track B | B3a: nothing (code only; may land before B1, owner 2026-11-03), and before M6a. B3b–d: B1; B3b after open M6 PRs; B3c after the real-data check and OPEN_QUESTIONS 8 | Owner applies |
 | Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | None | Core M6, M6f, B2 | Design |
 | Phase 4: delivery | **Outline only** | None | Phase 3; hosting depends on B3 | |
 | Repo as orchestrator (this file and friends) | **Merged** (#8) | | | |
@@ -34,14 +34,15 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 
 ## Next steps, in order
 
-1. ~~**Owner:** merge the orchestrator and AWS plan PRs.~~ Done (#8, #10).
+1. **Owner:** review and merge B0 (`infra-b0`); after its first green run, add `infra-terraform`,
+   `infra-tflint` and `infra-trivy` to the `main` ruleset's required checks.
 2. ~~**Fresh session or subagent:** review phase 1 against `docs/plan.md` and `docs/contracts/`.~~ Done
    2026-11-04 ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md)): 1 high, 4 medium, 11 low.
    H1 and M1–M4 are fixed in #19 (ADR 0015) and a fresh subagent's re-check confirmed them: **phase 1 is
    done.** The re-check's N1–N3 are fixed in #21; low findings L1–L11 stay open (OPEN_QUESTIONS 34).
 3. ~~**Owner, own terminal:** run the real-data check.~~ Done 2026-11-03, with a second run for the follow-ups.
 4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. Set `ANALYTICS_TRIMP_B` in `.env` before M6b.
-5. **Track A:** M6a. **Track B:** B0, B1, B2 (B3a before M6a if the order allows).
+5. **Track B:** B3a (may come before B1), then B1, B2. **Track A:** M6a after B3a.
 6. **Before phase 3 starts:** settle the design items in OPEN_QUESTIONS 10–18, and pass B2's retention
    verification before any real prompt.
 
@@ -51,6 +52,9 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 - **Schema:** migrations 0001–0005. Next is 0006, owned by track A.
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
 - **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR, CodeQL.
+  With B0: Terraform fmt/validate/test, TFLint and a Trivy config scan of `infra/`, all without AWS
+  credentials.
+- **Infra:** `infra/org`, `infra/account`, `infra/workload` with no resources yet (B0, on `infra-b0`).
 - **Merged PRs:** #2–#21 (#9 closed in favour of #14). Dependabot's #1 was closed.
 - **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
   `docs/garmin-personal-api/openapi.json`.
