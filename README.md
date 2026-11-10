@@ -42,7 +42,7 @@ uv run garminagent status     # sync health; --max-age-hours N for health checks
 uv run garminagent sync --since 2019-01-01  # extend history backwards
 uv run garminagent parse-fit  # (re)parse downloaded FIT files; no Garmin requests
 uv run garminagent renormalize activities  # re-parse stored responses after an upgrade; no Garmin requests
-uv run garminagent analyze    # sport groups and the threshold timeline from stored data
+uv run garminagent analyze    # sport groups, thresholds and per-activity metrics; --full lifts the cap
 uv run garminagent thresholds list --at 2026-11-01 --sport run  # thresholds in effect, with sources
 uv run garminagent thresholds set ftp 250 --sport ride  # a manual value outranks Garmin's
 uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)
@@ -103,6 +103,8 @@ All settings come from environment variables (or `.env`):
 | `SYNC_ACTIVITY_REFETCH_DAYS` | `7` | Recent days of activities re-fetched each run (late uploads, edits) |
 | `SCHEDULE_INTERVAL_HOURS` | `6` | `schedule`: time between runs once caught up (minimum 1) |
 | `SCHEDULE_CATCH_UP_MINUTES` | `15` | `schedule`: time between runs while a backfill is in progress (minimum 5) |
+| `ANALYTICS_TRIMP_B` | – | `1.92` or `1.67` (Banister's coefficients for men, women); required for HR load, never shown or logged |
+| `ANALYTICS_MAX_ACTIVITIES` | `200` | Activities' metrics recomputed per run at most (`analyze --full` has no cap; minimum 1) |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `LOG_FORMAT` | `text` (`json` in the image) | `text` or `json` |
 | `GARMIN_BASE_URL` | `https://personal.connectapi.garmin.com` | Personal API base URL |

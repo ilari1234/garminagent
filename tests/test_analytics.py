@@ -1,11 +1,13 @@
 """Sport groups and the threshold timeline, without a database. Synthetic values only."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
 from garminagent.analytics.sports import GROUPS, SPORT_GROUPS, is_mapped, sport_group
 from garminagent.analytics.thresholds import (
+    DAILY_RESTING_MIN_DAYS,
+    DAILY_RESTING_WINDOW_DAYS,
     PRECEDENCE,
     VALUE_TYPES,
     ActivityThresholds,
@@ -17,6 +19,7 @@ from garminagent.analytics.thresholds import (
     derive_from_activities,
     derive_from_zones,
 )
+from garminagent.analytics.zones import ZoneHistory, ZoneRow
 
 D1, D2, D3, D4 = date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1), date(2026, 4, 1)
 
@@ -160,7 +163,8 @@ def test_precedence_is_manual_then_garmin_zones_then_activity() -> None:
             row("lthr", "all", "manual", D3, 170),
         ]
     )
-    assert timeline.at(date(2025, 12, 31), "run")["lthr"] is None  # nothing yet
+    before = timeline.at(date(2025, 12, 31), "run")["lthr"]  # before any row: the first one, filled back
+    assert before is not None and (before.value, before.source, before.backfilled) == (160, "activity", True)
     activity = timeline.at(D1, "run")["lthr"]
     assert activity is not None and (activity.value, activity.source) == (160, "activity")
     zones = timeline.at(D2, "run")["lthr"]
@@ -210,3 +214,99 @@ def test_cli_choices_match_the_code() -> None:
     from garminagent import cli
 
     assert [c.value for c in cli.SportChoice] == ["all", *GROUPS]
+
+
+# --- the owner's fallbacks (ADR 0013, 2026-11-07) ---
+
+
+def test_backward_fill_uses_the_groups_earliest_row_else_alls() -> None:
+    timeline = ThresholdTimeline(
+        [
+            row("lthr", "run", "activity", D2, 165),  # first detection on a run
+            row("lthr", "run", "activity", D3, 168),
+            row("lthr", "all", "garmin_zones", D3, 170),
+            row("max_hr", "all", "garmin_zones", D3, 190),  # first zones fetch
+        ]
+    )
+    on_d1 = timeline.at(D1, "run")
+    assert on_d1["lthr"] is not None and (on_d1["lthr"].value, on_d1["lthr"].valid_from) == (165, D2)
+    assert on_d1["lthr"].backfilled
+    assert on_d1["max_hr"] is not None and (on_d1["max_hr"].value, on_d1["max_hr"].sport) == (190, "all")
+    assert on_d1["max_hr"].backfilled
+    ski = timeline.at(D1, "ski")["lthr"]  # no ski rows: `all`'s earliest
+    assert ski is not None and (ski.value, ski.sport, ski.backfilled) == (170, "all", True)
+    assert timeline.at(D1, "run")["ftp"] is None  # no row of the type at all: nothing to fill
+
+
+def test_backward_fill_never_hides_a_dated_value() -> None:
+    timeline = ThresholdTimeline([row("lthr", "all", "garmin_zones", D1, 170), row("lthr", "run", "manual", D3, 160)])
+    on_d2 = timeline.at(D2, "run")["lthr"]
+    assert on_d2 is not None and (on_d2.value, on_d2.source, on_d2.backfilled) == (170, "garmin_zones", False)
+
+
+def test_backward_fill_takes_precedence_among_rows_starting_the_same_day() -> None:
+    timeline = ThresholdTimeline([row("lthr", "run", "activity", D2, 165), row("lthr", "run", "manual", D2, 160)])
+    filled = timeline.at(D1, "run")["lthr"]
+    assert filled is not None and (filled.value, filled.source) == (160, "manual")
+
+
+def resting_days(day: date, values: list[float | None]) -> dict[date, float]:
+    """values[0] is the day before `day`, values[1] two days before, and so on."""
+    return {day - timedelta(days=n + 1): v for n, v in enumerate(values) if v is not None}
+
+
+def test_resting_hr_is_the_mean_of_the_seven_days_before() -> None:
+    assert (DAILY_RESTING_WINDOW_DAYS, DAILY_RESTING_MIN_DAYS) == (7, 3)
+    daily = resting_days(D4, [50, 52, None, 54, None, None, 48, 99])  # the 8th day back is outside
+    daily[D4] = 30  # the activity's own day is still partial: not used
+    resolved = ThresholdTimeline([], daily).at(D4, "run")["resting_hr"]
+    # (50 + 52 + 54 + 48) / 4 = 51.0
+    assert resolved is not None and (resolved.value, resolved.source, resolved.backfilled) == (
+        51.0,
+        "daily_summary",
+        False,
+    )
+    assert resolved.valid_from == D4 - timedelta(days=1)
+
+
+def test_resting_hr_needs_three_days_in_the_window() -> None:
+    daily = resting_days(D4, [50, None, None, None, None, None, 52])
+    assert ThresholdTimeline([], daily).at(D4, "run")["resting_hr"] is None
+
+
+def test_daily_resting_hr_ranks_below_threshold_rows_and_above_the_backward_fill() -> None:
+    daily = resting_days(D2, [50, 51, 52])
+    with_zones = ThresholdTimeline([row("resting_hr", "all", "garmin_zones", D1, 45)], daily).at(D2, "run")
+    assert with_zones["resting_hr"] is not None and with_zones["resting_hr"].source == "garmin_zones"
+    later_manual = ThresholdTimeline([row("resting_hr", "all", "manual", D3, 45)], daily).at(D2, "run")
+    resting = later_manual["resting_hr"]
+    assert resting is not None and (resting.value, resting.source) == (51.0, "daily_summary")
+
+
+# --- HR zone floors ---
+
+FLOORS_A = (100, 120, 140, 160, 180)
+FLOORS_B = (101, 121, 141, 161, 181)
+FLOORS_RUN = (105, 125, 145, 165, 185)
+
+
+def test_zone_floors_prefer_the_groups_sport_then_default() -> None:
+    history = ZoneHistory(
+        [ZoneRow("DEFAULT", D1, FLOORS_A), ZoneRow("DEFAULT", D3, FLOORS_B), ZoneRow("RUNNING", D2, FLOORS_RUN)]
+    )
+    assert history.at(D1, "run") == history.at(D1, "ski")
+    on_d1 = history.at(D1, "run")
+    assert on_d1 is not None and (on_d1.zone_sport, on_d1.floors, on_d1.backfilled) == ("DEFAULT", FLOORS_A, False)
+    run = history.at(D4, "run")
+    assert run is not None and (run.zone_sport, run.valid_from, run.floors) == ("RUNNING", D2, FLOORS_RUN)
+    ride = history.at(D4, "ride")  # no CYCLING rows
+    assert ride is not None and (ride.zone_sport, ride.floors) == ("DEFAULT", FLOORS_B)
+
+
+def test_zone_floors_fill_back_and_skip_incomplete_rows() -> None:
+    history = ZoneHistory([ZoneRow("DEFAULT", D2, FLOORS_A), ZoneRow("DEFAULT", D3, (100, None, 140, 160, 180))])
+    early = history.at(D1, "ride")
+    assert early is not None and (early.valid_from, early.backfilled) == (D2, True)
+    late = history.at(D4, "ride")  # the incomplete row is not a change
+    assert late is not None and (late.valid_from, late.floors) == (D2, FLOORS_A)
+    assert ZoneHistory([]).at(D1, "run") is None

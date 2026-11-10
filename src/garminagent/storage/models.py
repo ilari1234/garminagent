@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -362,6 +363,81 @@ class AthleteThreshold(Base):
         CheckConstraint("value_type IN ('ftp', 'lthr', 'max_hr', 'resting_hr', 'threshold_speed')", name="value_type"),
         CheckConstraint("sport IN ('all', 'run', 'ride', 'ski', 'strength', 'other')", name="sport"),
         CheckConstraint("source IN ('manual', 'garmin_zones', 'activity')", name="source"),
+    )
+
+
+class ActivityMetrics(Base):
+    """Per-activity metrics (ADR 0013, M6b), computed by `analyze` from samples and the
+    thresholds in effect on the activity's day, which the row records. Recomputed only when
+    `input_fingerprint` changes (activity day and group, FIT files and parser version,
+    thresholds, zone floors, HR load coefficient, `algo_version`), never on `updated_at`, which
+    sync rewrites for recent activities. Seconds are moving seconds (the gap rule in
+    `garminagent.analytics.metrics`); coverages are fractions of them. Text columns hold codes."""
+
+    __tablename__ = "activity_metrics"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    activity_date: Mapped[date] = mapped_column(Date)  # local start day, else UTC
+    sport_group: Mapped[str] = mapped_column(String(16))
+    algo_version: Mapped[int] = mapped_column(SmallInteger)
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    moving_s: Mapped[int | None] = mapped_column(Integer, nullable=True)  # NULL: no samples
+    hr_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    power_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    speed_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weighted_power_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    intensity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    power_load: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hr_load: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load: Mapped[float | None] = mapped_column(Float, nullable=True)
+    load_method: Mapped[str] = mapped_column(String(8))
+    hr_zone_0_s: Mapped[int | None] = mapped_column(Integer, nullable=True)  # below zone 1
+    hr_zone_1_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hr_zone_2_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hr_zone_3_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hr_zone_4_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hr_zone_5_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_1_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_2_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_3_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_4_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_5_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_6_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    power_level_7_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    three_zone_low_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    three_zone_mid_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    three_zone_high_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    efficiency_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ef_basis: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    decoupling: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The thresholds used, for traceability. The HR load coefficient is not here: it implies
+    # sex and appears only inside the fingerprint (ADR 0013).
+    ftp_w: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lthr_bpm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_hr_bpm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resting_hr_bpm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resting_hr_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hr_zones_sport: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hr_zones_valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    thresholds_backfilled: Mapped[bool] = mapped_column(Boolean)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["athlete_id", "activity_id"],
+            ["activity.athlete_id", "activity.activity_id"],
+            name="fk_activity_metrics_activity",
+            ondelete="CASCADE",
+        ),
+        Index("ix_activity_metrics_date", "athlete_id", "activity_date"),
+        CheckConstraint("sport_group IN ('run', 'ride', 'ski', 'strength', 'other')", name="sport_group"),
+        CheckConstraint("load_method IN ('power', 'hr', 'none')", name="load_method"),
+        CheckConstraint("ef_basis IN ('power', 'speed')", name="ef_basis"),
+        CheckConstraint(
+            "resting_hr_source IN ('manual', 'garmin_zones', 'activity', 'daily_summary')", name="resting_hr_source"
+        ),
+        CheckConstraint("hr_zones_sport IN ('DEFAULT', 'RUNNING', 'CYCLING')", name="hr_zones_sport"),
     )
 
 

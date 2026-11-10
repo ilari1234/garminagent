@@ -4,7 +4,8 @@
 2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
 the owner's answers are recorded below. M6a is built (2026-11-07); its choices where this ADR left
 room are recorded under *M6a as built*, and the owner's answers on M6b's threshold inputs under
-*Real-data findings for M6b*. M6b–M6f are not built yet.
+*Real-data findings for M6b*. M6b is built (2026-11-09), recorded under *M6b as built*. M6c–M6f are
+not built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -208,6 +209,71 @@ fraction, scaled so 1 h at LTHR = 100):
   changes (phase 1 review L10).
 - **`ANALYTICS_TRIMP_B` is set** in the owner's `.env` (2026-11-07). Its value stays out of the
   repository, as decided on 2026-11-03.
+
+## M6b as built (2026-11-09)
+
+`activity_metrics` (migration 0007) holds one row per activity, written by the `analyze` step's
+third part (`garminagent.analytics.activity_metrics`, formulas in `analytics/metrics.py`).
+Choices made where the decision above left room; they change no milestone or table.
+
+- **The gap rule, exactly.** A sample covers the seconds until the next sample when that gap is at
+  most 10 s, carrying its values; before a longer gap (a pause) and at the end it covers its own
+  second only, so 3600 samples at 1 Hz are an hour. "Moving time" (`moving_s`) is time not paused
+  by this rule; a standstill the watch kept recording counts as moving. Seconds whose covering
+  sample lacks a value stay empty, never filled from a neighbour.
+- **Coverage gates every channel at 50 % of moving time** (`MIN_COVERAGE`): weighted power and
+  the power metrics need power on half the seconds, HR load and efficiency need HR on half.
+  Missing seconds are not extrapolated, so HR load with 60 % coverage counts only those seconds.
+  Coverages are stored as fractions.
+- **Weighted power** windows cross neither pauses nor seconds without power. It is reported for
+  any group, but **intensity, power load and power levels are never computed for runs**, even with
+  power and a manual FTP for `all`: running load is HR-only in phase 2.
+- **Power load uses moving time** as `s`. Power levels count each second's own power with
+  inclusive upper bounds at 55, 75, 90, 105, 120 and 150 % of FTP.
+- **HR load**: x is floored at 0 (HR below resting adds nothing) and not capped at 1 (HR above a
+  stale max HR still counts). No HR load without max HR, resting HR and LTHR, a positive reserve
+  and LTHR above resting.
+- **Chosen load**: power load if computed, else HR load if computed, else none
+  (`load_method` `power`, `hr`, `none`). An activity without samples (no FIT file yet, or a file
+  that couldn't be used) gets a row with `moving_s` NULL and no load; the row is recomputed when a
+  file is parsed.
+- **HR zones** use Garmin's floors from `athlete_zones`: the group's own zone sport (RUNNING for
+  runs, CYCLING for rides) before DEFAULT, latest row on or before the day, only rows with all
+  five floors. Zone 0 (below zone 1) is stored too, so zone seconds add up to the seconds with HR.
+  Dates before the first zones fetch use the first fetch's floors (the owner's backward fill,
+  applied to floors as to thresholds) and set `thresholds_backfilled`.
+- **3-zone split**: below zone 3 is low, zone 3 mid, zones 4–5 high, from HR zones only. A
+  convention: Garmin's HR zones don't mark LT1 and LT2 (OPEN_QUESTIONS 40 would give real ones).
+- **Efficiency factor** is mean output over mean HR on the seconds having both: power (W) when
+  power covers half the session, else speed (m/s); `ef_basis` says which. Plain mean output, not
+  weighted power, so the whole-session value and the decoupling halves use one definition.
+- **Decoupling is not gated on steadiness.** No published rule says what "steady" is, so the code
+  computes it for every session of at least 60 min moving time with an efficiency factor (first
+  600 moving seconds excluded, the rest halved by moving seconds). Consumers must read it only for
+  steady aerobic sessions, for example by the 3-zone split; M6f decides how (OPEN_QUESTIONS 41).
+- **Resting HR and backward fill live in the resolver** (`ThresholdTimeline`), so
+  `thresholds list --at` shows what the metrics use, including `backfilled` and a
+  `daily_summary` source. The fill also applies to resting HR from threshold rows; the daily
+  summaries themselves are never filled back.
+- **Thresholds recorded** per row: FTP, LTHR, max and resting HR, resting HR's source, the zone
+  sport and `valid_from` of the floors, and `thresholds_backfilled` (any of them filled back).
+  The HR load coefficient is not stored; it only feeds the fingerprint.
+- **The fingerprint** is SHA-256 over the activity's day and sport group, its FIT files (content
+  hash, parse status, parser version), the resolved thresholds with their source, sport, date and
+  fill flag, the zone floors, the coefficient and `algo_version`. A reader with every other input
+  could tell which coefficient was used, but the same reader has HR load and HR samples, which
+  tell the same; neither reaches agents.
+- **Cap and order**: `ANALYTICS_MAX_ACTIVITIES` (default 200, at least 1) rows per run, newest
+  activities first, in transactions of 25; `analyze --full` has no cap. Counts: `metrics_computed`,
+  `metrics_current`, `metrics_pending`, `metrics_no_samples`, `metrics_backfilled`,
+  `hr_load_not_configured` (this run), and `load_power`, `load_hr`, `load_none` over all rows. An
+  error in one activity's arithmetic is counted under `errors` and skips that activity only.
+- **Settings**: `ANALYTICS_TRIMP_B` is a float that must equal 1.92 or 1.67; `config` shows it as
+  `set`. Settings validation errors no longer echo the input (`hide_input_in_errors`), so a typo
+  can't show which coefficient was meant. `status` lists `hr_load_not_configured` under
+  `warnings` while it is unset, and `analyze` logs a warning every run; neither changes health.
+- **Deleted activities**: the metrics row cascades from `activity`; there is no reconciliation with
+  Garmin (decided above).
 
 ## Alternatives considered
 

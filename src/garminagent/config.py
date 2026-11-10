@@ -23,13 +23,21 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://garminagent_app@127.0.0.1:5432/garm
 DEFAULT_MIGRATION_DATABASE_URL = "postgresql+psycopg://garminagent@127.0.0.1:5432/garminagent"
 # Postgres role names are interpolated into GRANT statements, so only plain identifiers.
 MIN_SYNC_REQUESTS = 10
+DEFAULT_ANALYTICS_MAX_ACTIVITIES = 200
 ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+# Banister's published TRIMP coefficients (men, women). The value implies sex, so it is never
+# shown, logged or stored outside a metrics row's input fingerprint (ADR 0013).
+TRIMP_COEFFICIENTS = (1.92, 1.67)
 # S3 general purpose bucket names: lowercase letters, digits, dots and hyphens, 3-63 characters.
 BUCKET_NAME = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore")
+    # Validation errors never echo the input: a mistyped ANALYTICS_TRIMP_B would show which
+    # coefficient (and so which sex) was meant, and other values may be secrets.
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", env_ignore_empty=True, extra="ignore", hide_input_in_errors=True
+    )
 
     garmin_personal_api_key: SecretStr | None = None
     garmin_api_key_expires: date | None = None
@@ -65,6 +73,11 @@ class Settings(BaseSettings):
     # credentials from the default AWS chain (the ECS task role); no AWS keys are configured here.
     blob_backend: Literal["local", "s3"] = "local"
     blob_s3_bucket: str | None = None
+    # Analytics (ADR 0013): the HR load coefficient has no default; while it is unset, HR load
+    # isn't computed. Each run recomputes at most ANALYTICS_MAX_ACTIVITIES activities' metrics,
+    # so the first catch-up spreads over runs; `analyze --full` has no cap.
+    analytics_trimp_b: float | None = Field(default=None, repr=False)
+    analytics_max_activities: int = Field(default=DEFAULT_ANALYTICS_MAX_ACTIVITIES, ge=1)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["text", "json"] = "text"
 
@@ -78,6 +91,14 @@ class Settings(BaseSettings):
     def _role_is_identifier(cls, value: str) -> str:
         if not ROLE_NAME.fullmatch(value):
             raise ValueError("DB_APP_ROLE must be a lowercase identifier (letters, digits, underscore)")
+        return value
+
+    @field_validator("analytics_trimp_b")
+    @classmethod
+    def _trimp_b_is_published(cls, value: float | None) -> float | None:
+        # The message names the allowed values, never the rejected one.
+        if value is not None and value not in TRIMP_COEFFICIENTS:
+            raise ValueError("ANALYTICS_TRIMP_B must be 1.92 or 1.67")
         return value
 
     @field_validator("blob_s3_bucket")
@@ -120,6 +141,8 @@ class Settings(BaseSettings):
             "data_dir": str(self.data_dir),
             "blob_backend": self.blob_backend,
             "blob_s3_bucket": self.blob_s3_bucket,
+            "analytics_trimp_b": "set" if self.analytics_trimp_b is not None else None,
+            "analytics_max_activities": self.analytics_max_activities,
             "log_level": self.log_level,
             "log_format": self.log_format,
         }
