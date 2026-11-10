@@ -29,9 +29,10 @@ _ENV_ALLOWED = frozenset({".env.example"})
 _DATA_DIR = re.compile(_BEFORE + _RELATIVE + r"data[/\\]", re.IGNORECASE)
 # A bare `data` word (`ls data`). Skipped for git and gh, whose messages are prose.
 _DATA_WORD = re.compile(_BEFORE + _RELATIVE + r"data(?=$|[\s'\"`;|&)<>,])", re.IGNORECASE)
-# Globs that could expand to either (`cat .e*`, `ls d?ta/`).
-_ENV_GLOB = re.compile(_BEFORE_ENV + r"\.e[\w.-]*[*?\[]", re.IGNORECASE)
-_DATA_GLOB = re.compile(_BEFORE + _RELATIVE + r"d[\w-]{0,3}[*?]", re.IGNORECASE)
+# Globs that could expand to either (`cat .e*`, `ls d?ta/`). A doubled `**` right after a word
+# is Markdown bold in a heredoc (`done**`), not a glob, so it doesn't count.
+_ENV_GLOB = re.compile(_BEFORE_ENV + r"\.e[\w.-]*(?:\?|\[|\*(?!\*))", re.IGNORECASE)
+_DATA_GLOB = re.compile(_BEFORE + _RELATIVE + r"d[\w-]{0,3}(?:\?|\*(?!\*))", re.IGNORECASE)
 _PROSE_COMMANDS = re.compile(r"^\s*(?:git|gh)\s", re.IGNORECASE)
 
 _MESSAGE = (
