@@ -12,8 +12,19 @@ boundaries: [docs/contracts/](docs/contracts/README.md).
 The repo is the orchestrator; no session's memory is. See
 [ADR 0012](decisions/0012-repo-as-orchestrator.md).
 
+- **Start of session:** `git fetch`, then `git log --oneline origin/main`, `gh pr list` and
+  `git worktree list`. These, not prose, say what merged and who owns what
+  ([ADR 0016](decisions/0016-status-from-git.md)). `PROJECT_STATE.md` holds owners, blockers and
+  next steps.
+- **Never edit or switch branches in the main checkout**: the user and other sessions share it,
+  and it's often behind `origin/main`. Work in your own worktree under `.claude/worktrees/<branch>`,
+  cut from `origin/main`.
+- At most two implementation sessions, one per track (A: `src/` and migrations; B: `infra/`).
+  Chores (Dependabot, CVE bumps) go to a separate short session. If both tracks are taken, do only
+  read-only work or ask the user.
 - Any session that changes architecture, schema, contracts or conventions must add or update an
-  ADR and update `PROJECT_STATE.md` in the same change.
+  ADR and update `PROJECT_STATE.md` in the same change. A milestone PR marks its own row Done;
+  no follow-up "Record X as merged" PR.
 - Each session works on its own git branch or worktree. Handoff happens through merges and PRs.
 - A phase is "done" only after review by a fresh session or subagent against the plan and contracts.
 - Never put secrets, tokens or Terraform state in the repo or in chat.
@@ -35,7 +46,11 @@ docker compose up -d db      # local Postgres 18 on 127.0.0.1:5432
   *why*, comments only where the code can't say it.
 - Tests use fakes (`tests/garmin/fakes.py`: fake server, fake clock) and synthetic fixtures.
   No live network calls in tests or CI.
+- `ruff format --check` also formats Python code blocks in Markdown files; keep doc snippets
+  formatted.
 - Dependencies: `uv add` (never pip); commit `pyproject.toml` and `uv.lock` together.
+- uv itself is bumped by hand (see Supply chain). Close Dependabot PRs that bump the uv version or
+  the uv image (as with #24).
 - **Branches and pull requests only.** `main` is protected by a ruleset (no direct pushes, no
   force pushes, squash merge only, all CI checks and CodeQL required). Per task: create a branch
   (`m3-storage`, `fix/…`, `docs/…`), commit there, push it and open a PR that fills in the
