@@ -1,6 +1,7 @@
 # 0012: The repo, not a session, holds project state
 
-**Status:** Accepted (owner's brief, 2026-11-01).
+**Status:** Accepted (owner's brief, 2026-11-01). Refined by [0016](0016-status-from-git.md):
+facts git holds are read from git, not copied into `PROJECT_STATE.md`.
 
 ## Context
 

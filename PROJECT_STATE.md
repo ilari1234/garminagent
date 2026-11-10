@@ -1,83 +1,73 @@
 # Project state
 
-**The single source of truth for where the project stands.** Last updated 2026-11-10 (M6b merged, #34). Update this file
-in any PR that changes status, architecture, schema, contracts or conventions (ADR 0012).
+**What git can't tell you:** owners, blockers, decisions waiting on the owner, and what comes next.
+Last updated 2026-11-10. Facts that git and GitHub already hold are read from them, not copied here
+([ADR 0016](decisions/0016-status-from-git.md)):
+
+| Question | Ask |
+|---|---|
+| What merged, and when? | `git fetch && git log --oneline origin/main` |
+| Which PRs are open, and who owns them? | `gh pr list` (branch names name the milestone) |
+| Which sessions have worktrees? | `git worktree list` |
+| What's the next migration number? | `ls src/garminagent/storage/migrations/versions/` (track A only) |
+
+Each fact below is written once. Detail lives in the linked ADR, not in this file. A PR marks its
+own row **Done** before it merges, because `main` only sees the change after the merge, so no
+"Record X as merged" follow-up is needed.
 
 Goal: AI agents that create, update and evaluate training plans (off-season, half marathon, marathon,
 ultra, road and gravel cycling) from the owner's Garmin Connect data. Single user by design.
 
 ## Status
 
-Phase 1 is done (reviewed and re-checked 2026-11-04). The phase 2 design (ADR 0013) is accepted; M6a
-is merged (#27). The real-data check settled its Garmin questions (ADR 0013, *Real-data findings for
-M6b*), and the owner decided M6b's threshold inputs there. M6b (`activity_metrics`, migration 0007)
-is merged (#34; ADR 0013, *M6b as built*); M6c–M6e are next. The AWS plan (#10), B0 tooling (#22) and B3a, the blob store seam
-(#25) and B3b, the app code for the AWS workload (#32), are merged. B1 is next on track B.
-
-| Work | Status | Owner session / branch | Depends on | Blocked by |
+| Work | Status | Owner | Depends on | Blocked by / waits on |
 |---|---|---|---|---|
-| Phase 1: retrieve and store (M0–M5) | **Done** 2026-11-04: reviewed, H1 and M1–M4 fixed in #19 ([ADR 0015](decisions/0015-sync-failure-handling.md)) and re-checked ([review](docs/reviews/phase1-review.md#re-check-of-the-fixes-2026-11-04)); low findings open (OPEN_QUESTIONS 34) | `main` | | |
-| Real-data check | **Done** 2026-11-03, including its follow-ups | Owner's terminal | Phase 1 | |
-| Phase 2: analytics (M6a–M6f) | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)). **M6a merged (#27)**: `hr_zones`, `athlete_zones`, `athlete_threshold` with resolver, activity threshold columns, `renormalize`, `thresholds set/unset/list`, sport groups, `analyze` step; migration 0006. Choices recorded in ADR 0013, *M6a as built*. **M6b merged (#34)**: `activity_metrics` (moving time by the gap rule, weighted power, power and HR load, chosen load, zones, levels, 3-zone split, efficiency, decoupling, coverage, thresholds used), fingerprint recompute capped per run, `analyze --full`, `ANALYTICS_TRIMP_B`/`ANALYTICS_MAX_ACTIVITIES`, resting HR from daily summaries and the backward fill in the resolver; migration 0007. Choices in ADR 0013, *M6b as built* | Track A session | Phase 1 review; B3a (merged, #25) | M6c–M6e (track A, any order) |
-| AWS plan | **Merged** (#10) ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
-| AWS B0 tooling | **Merged** (#22): `infra/` skeleton, lock files, `infra.yml` checks, Dependabot, deny rules | | Plan merged | Owner adds the `infra-*` checks to the ruleset after their first green run |
-| AWS B1 foundation | Planned | Track B | B0 | Owner applies |
-| AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its verification |
-| AWS B3a seam | **Merged** (#25): `make_blob_store(settings)` in `storage/blobs.py`; `cli.py` and `runner.py` use it; a test fails on any direct `LocalBlobStore(...)` in app code. Pure refactor: storage contract unchanged | | Nothing (code only) | |
-| AWS B3b app code | **Merged** (#32): `storage/s3.py` (`S3BlobStore`, `BLOB_BACKEND`, `BLOB_S3_BUCKET`), `db-bootstrap` (owner and app roles with the RDS master login), RDS CA bundle in the image, `DB_REQUIRE_VERIFY_FULL`; new dependency `boto3`. No migration, no `infra/` change. Choices and what B3c/B3d must provide: ADR 0008, *B3b implementation* | | B3a; M6a (merged) | |
+| Phase 1: retrieve and store (M0–M5) | **Done** 2026-11-04 ([review](docs/reviews/phase1-review.md), [ADR 0015](decisions/0015-sync-failure-handling.md)). Low findings L1–L11 open (OPEN_QUESTIONS 34) | | | |
+| Real-data check | **Done** 2026-11-03 | Owner's terminal | Phase 1 | |
+| Phase 2 design | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)) | | | |
+| M6a thresholds, zones, `analyze` | **Done** (ADR 0013, *M6a as built*) | | | |
+| M6b per-activity metrics | **Done** (ADR 0013, *M6b as built*) | | M6a | Owner's terminal run (next steps, 2) |
+| M6c–M6e | **Next**, any order | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
+| M6f | Planned (ADR 0013) | Track A | | |
+| AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
+| AWS B0 tooling | **Done** | | | Owner: ruleset checks (next steps, 1) |
+| AWS B1 foundation | **Next** | Track B | B0 | Owner applies |
+| AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its retention verification |
+| AWS B3a blob store seam | **Done** | | | |
+| AWS B3b app code | **Done** (ADR 0008, *B3b implementation*: what B3c/B3d must provide) | | B3a | |
 | AWS B3c–d workload | Planned | Track B | B1, B3b; B3c after OPEN_QUESTIONS 8 | Owner applies |
-| Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | None | Core M6, M6f, B2 | Design |
-| Phase 4: delivery | **Outline only** | None | Phase 3; hosting depends on B3 | |
-| Repo as orchestrator (this file and friends) | **Merged** (#8) | | | |
+| Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | | M6 core, M6f, B2 | Design: OPEN_QUESTIONS 10–18 |
+| Phase 4: delivery | **Outline only** | | Phase 3; hosting depends on B3 | |
 
-Session IDs are local to the owner's desktop app. A session that can't open them should work from the
-repo alone. The planning essentials are in the two ADRs.
+**Parallel work** ([ADR 0012](decisions/0012-repo-as-orchestrator.md)): at most two implementation
+sessions at once, one per track, each on its own branch or worktree. **Track A (application)** alone
+adds migrations. **Track B (infrastructure)** alone touches `infra/`; exceptions are in ADR 0008.
+Chores (Dependabot, CVE bumps) go to a separate short session.
 
-**Parallel work:** phase 2 and AWS run in **separate sessions**, on separate branches or worktrees, at
-most two active at once. **Track A (application)** alone adds migrations. **Track B (infrastructure)**
-alone touches `infra/`. Exceptions are listed in ADR 0008.
+## Next steps
 
-## Next steps, in order
+Open items only. Each one points at its row above instead of restating it.
 
-1. ~~**Owner:** review and merge B0.~~ Merged (#22). **Owner:** after the first green `infra.yml` run on
-   `main`, add `infra-terraform`, `infra-tflint` and `infra-trivy` to the `main` ruleset's required checks.
-   B3a is merged (#25).
-2. ~~**Fresh session or subagent:** review phase 1 against `docs/plan.md` and `docs/contracts/`.~~ Done
-   2026-11-04 ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md)): 1 high, 4 medium, 11 low.
-   H1 and M1–M4 are fixed in #19 (ADR 0015) and a fresh subagent's re-check confirmed them: **phase 1 is
-   done.** The re-check's N1–N3 are fixed in #21; low findings L1–L11 stay open (OPEN_QUESTIONS 34).
-3. ~~**Owner, own terminal:** run the real-data check.~~ Done 2026-11-03, with a second run for the follow-ups.
-4. ~~**Owner:** approve the phase 2 plan.~~ ADR 0013 accepted 2026-11-03. `ANALYTICS_TRIMP_B` set 2026-11-07.
-5. **Track B:** ~~B3a~~ merged (#25); ~~B3b~~ merged (#32); next B1, then B2. B3c/B3d must pass
-   `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off on AWS. **Track A:** M6a is
-   merged (#27). The owner's first `renormalize activities` and `analyze` (2026-11-07) re-parsed all
-   558 activities with none skipped and left no sport key unmapped. The real-data check's `thresholds`
-   section (#29) then settled M6a's Garmin questions: no threshold speed or FTP ever arrives, IF is a
-   fraction, activity LTHR is measured, and zones carry max HR and LTHR but no resting HR (ADR 0013).
-   The owner then decided M6b's threshold inputs (resting HR from the daily summaries, a backward
-   fill for history) and that deleted activities aren't reconciled (ADR 0013). **M6b is merged
-   (#34).** **Owner, own terminal:** run `renormalize daily_summaries` once (resting HR now feeds HR
-   load), then `analyze --full`, and check its counts: `hr_load_not_configured` should be 0 and
-   `load_hr` should cover most activities. **Track A:** M6c–M6e next, in any
-   order. Lab test input is OPEN_QUESTIONS 40; decoupling's steadiness rule is OPEN_QUESTIONS 41.
-6. **Before phase 3 starts:** settle the design items in OPEN_QUESTIONS 10–18, and pass B2's retention
-   verification before any real prompt.
+1. **Owner:** after the first green `infra.yml` run on `main`, add `infra-terraform`, `infra-tflint`
+   and `infra-trivy` to the `main` ruleset's required checks (AWS B0).
+2. **Owner, own terminal:** run `renormalize daily_summaries` once (resting HR now feeds HR load),
+   then `analyze --full`, and check its counts: `hr_load_not_configured` should be 0 and `load_hr`
+   should cover most activities (M6b).
+3. **Track A:** M6c–M6e, in any order.
+4. **Track B:** B1, then B2. B3c/B3d must pass `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off
+   on AWS.
+5. **Before phase 3 starts:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
+   before any real prompt.
 
 ## What exists today
 
-- **Code:** client, storage, sync, FIT parsing, wellness data, local scheduler, status, purge. App code gets
-  its blob store from `make_blob_store(settings)` (B3a, #25). M6a: HR zones history, the
-  threshold timeline and resolver (`garminagent.analytics`), `renormalize`, `analyze`, `thresholds`.
-  M6b (#34): per-activity metrics (`analytics/metrics.py`, `analytics/activity_metrics.py`).
-  B3b (#32): the S3 blob store, `db-bootstrap`, the RDS CA bundle and `DB_REQUIRE_VERIFY_FULL`.
-- **Schema:** migrations 0001–0007 on `main`. The next one is 0008, owned by track A.
+What the code does is in the [README](README.md) and [docs/contracts/](docs/contracts/README.md);
+this section lists only what the tree doesn't show.
+
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
-- **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR, CodeQL.
-  Since B0: Terraform fmt/validate/test, TFLint and a Trivy config scan of `infra/`, all without AWS
-  credentials.
-- **Infra:** `infra/org`, `infra/account`, `infra/workload` with no resources yet (B0, #22).
-- **Merged PRs:** #2–#34 except #24, closed unmerged (a Dependabot uv bump), and #9 (closed in favour of #14). Dependabot's #1 was
-  closed.
+- **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR,
+  CodeQL, and the `infra-*` checks (all without AWS credentials).
+- **Infra:** `infra/org`, `infra/account` and `infra/workload` exist but nothing is applied yet.
 - **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
   `docs/garmin-personal-api/openapi.json`.
 
@@ -97,5 +87,5 @@ alone touches `infra/`. Exceptions are listed in ADR 0008.
 ## Definition of done
 
 **A milestone:** PR merged with green checks, SECURITY.md checklist answered, `/security-review` run,
-this file updated. **A phase:** additionally reviewed by a fresh session or subagent against the plan
-and contracts, with the result recorded here.
+and its row in this file marked **Done** in the same PR. **A phase:** additionally reviewed by a
+fresh session or subagent against the plan and contracts, with the result linked from its row.
