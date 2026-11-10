@@ -26,11 +26,11 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | Real-data check | **Done** 2026-11-03 | Owner's terminal | Phase 1 | |
 | Phase 2 design | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)) | | | |
 | M6a thresholds, zones, `analyze` | **Done** (ADR 0013, *M6a as built*) | | | |
-| M6b per-activity metrics | **Done** (ADR 0013, *M6b as built*) | | M6a | Owner's terminal run (next steps, 2) |
+| M6b per-activity metrics | **Done** (ADR 0013, *M6b as built*) | | M6a | Owner's terminal run (next steps, 1) |
 | M6c–M6e | **Next**, any order | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
 | M6f | Planned (ADR 0013) | Track A | | |
 | AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
-| AWS B0 tooling | **Done** | | | Owner: ruleset checks (next steps, 1) |
+| AWS B0 tooling | **Done**; its `infra-*` checks are required on `main` | | | |
 | AWS B1 foundation | **Next** | Track B | B0 | Owner applies |
 | AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its retention verification |
 | AWS B3a blob store seam | **Done** | | | |
@@ -48,15 +48,13 @@ Chores (Dependabot, CVE bumps) go to a separate short session.
 
 Open items only. Each one points at its row above instead of restating it.
 
-1. **Owner:** after the first green `infra.yml` run on `main`, add `infra-terraform`, `infra-tflint`
-   and `infra-trivy` to the `main` ruleset's required checks (AWS B0).
-2. **Owner, own terminal:** run `renormalize daily_summaries` once (resting HR now feeds HR load),
+1. **Owner, own terminal:** run `renormalize daily_summaries` once (resting HR now feeds HR load),
    then `analyze --full`, and check its counts: `hr_load_not_configured` should be 0 and `load_hr`
    should cover most activities (M6b).
-3. **Track A:** M6c–M6e, in any order.
-4. **Track B:** B1, then B2. B3c/B3d must pass `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off
+2. **Track A:** M6c–M6e, in any order. Each ends with a `reviewer` subagent review.
+3. **Track B:** B1, then B2. B3c/B3d must pass `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off
    on AWS.
-5. **Before phase 3 starts:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
+4. **Before phase 3 starts:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
    before any real prompt.
 
 ## What exists today
@@ -88,4 +86,5 @@ this section lists only what the tree doesn't show.
 
 **A milestone:** PR merged with green checks, SECURITY.md checklist answered, `/security-review` run,
 and its row in this file marked **Done** in the same PR. **A phase:** additionally reviewed by a
-fresh session or subagent against the plan and contracts, with the result linked from its row.
+fresh session or subagent against the plan and contracts (the `reviewer` subagent,
+`.claude/agents/reviewer.md`), with the result linked from its row.

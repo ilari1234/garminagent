@@ -1,9 +1,10 @@
 # Phase 1 retrospective
 
 Written 2026-11-01. Phase 1 ran 2026-10-24 to 2026-10-28 in one long Claude Code session.
-**The code is merged, but phase 1 is not yet "done"** under the rule in ADR 0012: no independent
-review against the plan and contracts has happened, and real-data confirmation is partial
-(OPEN_QUESTIONS).
+**Phase 1 is done** (2026-11-04): an independent review against the plan and contracts found
+1 high and 4 medium defects, all fixed in #19 and re-checked
+([review](docs/reviews/phase1-review.md), [ADR 0015](decisions/0015-sync-failure-handling.md)).
+This retrospective was written before that review, so read it as of 2026-11-01.
 
 ## What was delivered
 

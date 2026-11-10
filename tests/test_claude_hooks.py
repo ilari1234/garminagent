@@ -93,6 +93,9 @@ def test_blocks_powershell(command: str) -> None:
         "ls docs",
         "cat C:/work/example-repo/docs/plan.md",
         "cat C:/other/data-tools/readme.md",
+        # Markdown bold in a heredoc, not a glob (a false positive found in use).
+        "python - <<'EOF'\ntext = '**Phase 1 is done** (2026)'\nEOF",
+        "cat > notes.md <<'EOF'\n**Draft** notes, **done** today\nEOF",
     ],
 )
 def test_allows(command: str) -> None:

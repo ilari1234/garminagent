@@ -27,6 +27,8 @@ The repo is the orchestrator; no session's memory is. See
   no follow-up "Record X as merged" PR.
 - Each session works on its own git branch or worktree. Handoff happens through merges and PRs.
 - A phase is "done" only after review by a fresh session or subagent against the plan and contracts.
+  Use the `reviewer` subagent (`.claude/agents/reviewer.md`): give it the scope and file its report
+  under `docs/reviews/`.
 - Never put secrets, tokens or Terraform state in the repo or in chat.
 - A `Proposed` ADR isn't approved: ask the user before building on it.
 
