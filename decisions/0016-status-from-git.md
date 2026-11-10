@@ -1,6 +1,8 @@
 # 0016: Status that git holds is read from git
 
 **Status:** Accepted (owner, 2026-11-10). Refines [0012](0012-repo-as-orchestrator.md).
+Refined by [0017](0017-build-notes-out-of-adrs.md): build detail now lives in
+`docs/build-notes/`, not in an ADR's *as built* section.
 
 ## Context
 

@@ -2,10 +2,13 @@
 
 AI-assisted training planning on the user's own Garmin Connect data. Single user by design
 (Garmin Personal API terms). Read first: [PROJECT_STATE.md](PROJECT_STATE.md) (status, owners,
-next steps), [docs/plan.md](docs/plan.md) (decisions, milestones, data handling) and
-[SECURITY.md](SECURITY.md) (threat model, controls, routines). Why things are as they are:
-[decisions/](decisions/README.md). Unresolved: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Layer
-boundaries: [docs/contracts/](docs/contracts/README.md).
+next steps), then your track's entry doc, which lists only what that track needs:
+[track A, application](docs/tracks/application.md) or
+[track B, infrastructure](docs/tracks/infrastructure.md). Other work (docs, chores, planning):
+[docs/plan.md](docs/plan.md) and [SECURITY.md](SECURITY.md). Why things are as they are:
+[decisions/](decisions/README.md); how they were built: [docs/build-notes/](docs/build-notes/).
+Unresolved: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Layer boundaries:
+[docs/contracts/](docs/contracts/README.md).
 
 ## Working across sessions
 
@@ -24,7 +27,8 @@ The repo is the orchestrator; no session's memory is. See
   read-only work or ask the user.
 - Any session that changes architecture, schema, contracts or conventions must add or update an
   ADR and update `PROJECT_STATE.md` in the same change. A milestone PR marks its own row Done;
-  no follow-up "Record X as merged" PR.
+  no follow-up "Record X as merged" PR. Close a milestone with the `milestone-close` skill. ADRs
+  hold decisions; build notes go in `docs/build-notes/` (ADR 0017).
 - Each session works on its own git branch or worktree. Handoff happens through merges and PRs.
 - A phase is "done" only after review by a fresh session or subagent against the plan and contracts.
   Use the `reviewer` subagent (`.claude/agents/reviewer.md`): give it the scope and file its report

@@ -25,8 +25,8 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | Phase 1: retrieve and store (M0–M5) | **Done** 2026-11-04 ([review](docs/reviews/phase1-review.md), [ADR 0015](decisions/0015-sync-failure-handling.md)). Low findings L1–L11 open (OPEN_QUESTIONS 34) | | | |
 | Real-data check | **Done** 2026-11-03 | Owner's terminal | Phase 1 | |
 | Phase 2 design | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)) | | | |
-| M6a thresholds, zones, `analyze` | **Done** (ADR 0013, *M6a as built*) | | | |
-| M6b per-activity metrics | **Done** (ADR 0013, *M6b as built*) | | M6a | Owner's terminal run (next steps, 1) |
+| M6a thresholds, zones, `analyze` | **Done** ([build notes](docs/build-notes/analytics.md#m6a-as-built-2026-11-07)) | | | |
+| M6b per-activity metrics | **Done** ([build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)) | | M6a | Owner's terminal run (next steps, 1) |
 | M6c–M6e | **Next**, any order | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
 | M6f | Planned (ADR 0013) | Track A | | |
 | AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
@@ -34,7 +34,7 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | AWS B1 foundation | **Next** | Track B | B0 | Owner applies |
 | AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its retention verification |
 | AWS B3a blob store seam | **Done** | | | |
-| AWS B3b app code | **Done** (ADR 0008, *B3b implementation*: what B3c/B3d must provide) | | B3a | |
+| AWS B3b app code | **Done** ([build notes](docs/build-notes/aws.md#b3b-implementation-2026-11-07): what B3c/B3d must provide) | | B3a | |
 | AWS B3c–d workload | Planned | Track B | B1, B3b; B3c after OPEN_QUESTIONS 8 | Owner applies |
 | Phase 3: agents | **Not started**; principles only ([ADR 0007](decisions/0007-agent-plan-write-boundaries.md)) | | M6 core, M6f, B2 | Design: OPEN_QUESTIONS 10–18 |
 | Phase 4: delivery | **Outline only** | | Phase 3; hosting depends on B3 | |
