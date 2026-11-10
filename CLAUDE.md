@@ -12,8 +12,8 @@ boundaries: [docs/contracts/](docs/contracts/README.md).
 The repo is the orchestrator; no session's memory is. See
 [ADR 0012](decisions/0012-repo-as-orchestrator.md).
 
-- **Start of session:** `git fetch`, then `git log --oneline origin/main`, `gh pr list` and
-  `git worktree list`. These, not prose, say what merged and who owns what
+- **Start of session:** run the `session-start` skill, or by hand: `git fetch`, then
+  `git log --oneline origin/main`, `gh pr list` and `git worktree list`. These, not prose, say what merged and who owns what
   ([ADR 0016](decisions/0016-status-from-git.md)). `PROJECT_STATE.md` holds owners, blockers and
   next steps.
 - **Never edit or switch branches in the main checkout**: the user and other sessions share it,
@@ -64,8 +64,11 @@ docker compose up -d db      # local Postgres 18 on 127.0.0.1:5432
 **Secrets and personal data**
 - Never read `.env*` or anything under `data/` (raw Garmin payloads = personal health data).
   The only exception is a spike `report.json` the user points to; it holds structure only.
-  Deny rules in `.claude/settings.json` back this up but don't cover every path (e.g. scripts
-  that open files themselves) — the rule applies regardless.
+  Deny rules in `.claude/settings.json` (Read tool) and a PreToolUse hook
+  (`scripts/claude_hooks/guard_private_paths.py`, shell command text) back this up but don't
+  cover every path (e.g. scripts that open files themselves, `grep -r` from the repo root) —
+  the rule applies regardless. If the hook blocks prose in a commit or PR message, pass the
+  text from a file (`-F`, `--body-file`); never rephrase a command to slip past it.
 - Runs against the real Garmin API are done by the user in their own terminal. Ask; don't run them.
 - Secrets are `SecretStr`, unwrapped only where sent. Never log, print, `repr` or put them in
   exception messages. Errors and logs carry method, path, status — never bodies or headers.
