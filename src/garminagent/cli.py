@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from garminagent import __version__
+from garminagent.analytics import AnalyticsOptions
 from garminagent.analytics import analyze as run_analyze
 from garminagent.analytics.thresholds import (
     THRESHOLD_SPORTS,
@@ -23,6 +24,7 @@ from garminagent.analytics.thresholds import (
     ThresholdOutOfRange,
     ThresholdTimeline,
     check_range,
+    load_daily_resting_hr,
     load_rows,
     set_manual,
     unset_manual,
@@ -335,12 +337,18 @@ def renormalize(
 
 
 @app.command()
-def analyze() -> None:
-    """Run the analytics on stored data, as every sync does after FIT parsing: sport groups and
-    the threshold timeline (M6a). Makes no Garmin requests. Prints counts, plus Garmin sport
-    keys not yet grouped. Exit code 1 if a part failed."""
+def analyze(
+    full: bool = typer.Option(
+        False, "--full", help="Recompute every activity whose metrics are out of date, ignoring the per-run cap."
+    ),
+) -> None:
+    """Run the analytics on stored data, as every sync does after FIT parsing: sport groups, the
+    threshold timeline and per-activity metrics. Metrics are recomputed only where their inputs
+    changed, at most ANALYTICS_MAX_ACTIVITIES per run unless --full. Makes no Garmin requests.
+    Prints counts, plus Garmin sport keys not yet grouped. Exit code 1 if a part failed."""
+    options = AnalyticsOptions.from_settings(get_settings(), full=full)
     with _athlete_sessions("analyze", locked=True) as (sessions, athlete_id):
-        result = run_analyze(sessions, athlete_id)
+        result = run_analyze(sessions, athlete_id, options)
     typer.echo(json.dumps({"counts": result.counts, "unmapped_sport_keys": result.unmapped_keys}, indent=2))
     if result.counts.get("errors"):
         raise typer.Exit(code=1)
@@ -398,6 +406,7 @@ def thresholds_list(
     refreshed by `analyze`, which every sync runs."""
     with _athlete_sessions("thresholds list") as (sessions, athlete_id), sessions() as session:
         rows = load_rows(session, athlete_id)
+        daily_resting = load_daily_resting_hr(session, athlete_id) if at is not None else {}
     out: dict[str, object] = {
         "timeline": [
             {
@@ -411,14 +420,20 @@ def thresholds_list(
         ]
     }
     if at is not None:
-        resolved = ThresholdTimeline(rows).at(at.date(), sport.value)
+        resolved = ThresholdTimeline(rows, daily_resting).at(at.date(), sport.value)
         out["at"] = {
             "date": at.date().isoformat(),
             "sport": sport.value,
             "values": {
                 kind: None
                 if r is None
-                else {"value": r.value, "source": r.source, "sport": r.sport, "valid_from": r.valid_from.isoformat()}
+                else {
+                    "value": r.value,
+                    "source": r.source,
+                    "sport": r.sport,
+                    "valid_from": r.valid_from.isoformat(),
+                    "backfilled": r.backfilled,
+                }
                 for kind, r in resolved.items()
             },
         }

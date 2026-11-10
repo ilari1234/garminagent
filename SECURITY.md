@@ -51,9 +51,11 @@ send, or depend on.
 | SQL injection | SQLAlchemy Core with bound parameters everywhere; the one interpolated identifier (app role) is regex-validated twice | `storage/repository.py`, migration 0001, `config.py` |
 | Database traffic readable on a network | Warning on every connection path when a non-local host lacks `sslmode=require/verify-*`. With `DB_REQUIRE_VERIFY_FULL=true` (AWS), anything but `sslmode=verify-full` for a non-local host is refused before connecting, on every path: app, migrations, `db-bootstrap` (tested). The image carries the RDS CA bundle | `storage/db.py`, migrations `env.py`, Dockerfile |
 | Raw store readable by other local users | Files 0600, directories 0700 (POSIX); in the image `/data` belongs to the non-root `app` user. On S3: private bucket, SSE-KMS, TLS-only policy, no versioning (B3c) | `storage/blobs.py`, Dockerfile, `infra/workload` (B3c) |
-| Location or free text spreading into analysis | Normalized tables have no GPS or name/description/note columns (schema guard test covers every normalized and derived table, and fails on a table not assigned to a layer); sleep notes, feedback and insights are never read; HRV status kept only if it is an enum code; HR zone sport and method kept only as the spec's codes, and every text column in the M6a tables is held to its codes by a CHECK constraint; raw layer keeps everything only for re-parsing | `storage/models.py`, `normalize.py`, `tests/storage/test_schema.py` |
+| Location or free text spreading into analysis | Normalized tables have no GPS or name/description/note columns (schema guard test covers every normalized and derived table, and fails on a table not assigned to a layer); sleep notes, feedback and insights are never read; HRV status kept only if it is an enum code; HR zone sport and method kept only as the spec's codes, and every text column in the M6a and M6b tables is held to its codes by a CHECK constraint (a test fails on a derived-table text column without one); raw layer keeps everything only for re-parsing | `storage/models.py`, `normalize.py`, `tests/storage/test_schema.py` |
 | Wrong thresholds silently skewing loads (phase 2) | Every threshold source is range-checked with one table (`THRESHOLD_RANGES`): activity fields and Garmin zones become NULL when implausible, manual input is refused (exit 2, the message names the range, never the value); precedence is code (manual, Garmin zones, activity) and `thresholds list` shows each value's source; Garmin's FTP and threshold speed feed only rides and runs; generated default zones are not requested | `normalize.py`, `analytics/thresholds.py`, `cli.py` |
-| Analytics bugs breaking the sync | The `analyze` step catches every error per part, counts it in `sync_run.counts["analytics"]` and logs the class name only; it never changes how a run ends | `analytics/step.py`, `sync.py` |
+| Wrong per-activity metrics or loads (phase 2) | Every formula tested against hand-computed synthetic values; one gap rule; no value without 50 % channel coverage and the thresholds it needs (never a guess); running load HR-only; recompute by input fingerprint, so a changed threshold, parser or algorithm never leaves stale rows; rows record the thresholds used and whether any was carried back | `analytics/metrics.py`, `analytics/activity_metrics.py`, `tests/test_metrics.py` |
+| HR load coefficient revealing sex | `ANALYTICS_TRIMP_B` accepts only 1.92 or 1.67, has no default, shows as `set` in `config`, is never logged or stored as a column (only inside the input fingerprint), and settings errors don't echo input (tested) | `config.py`, `models.py`, `tests/test_config.py`, `tests/storage/test_activity_metrics.py` |
+| Analytics bugs breaking the sync | The `analyze` step catches every error per part (and per activity for metrics), counts it in `sync_run.counts["analytics"]` and logs the class name only; it never changes how a run ends | `analytics/step.py`, `analytics/activity_metrics.py`, `sync.py` |
 | Data kept longer than wanted | `garminagent purge-data --yes` deletes all rows (one transaction, cascading) and then all blobs; re-runnable | `storage/repository.py`, `cli.py` |
 | Data sent to a model (phase 3) | See *Data handling* in docs/plan.md; OWASP LLM/Agentic mapping below | planned |
 | Unsafe training plan (phase 3) | Load-progression and recovery limits as code; evaluator agent; user approval before a plan is active | planned |
@@ -113,6 +115,18 @@ logs and `sync_run`; Garmin codes kept only from the spec's enums. Two hardening
 the database helper behind `renormalize`, `analyze` and `thresholds` now turns any unexpected error
 into exit 1 with the class name (no traceback), and docs/operations.md says `thresholds list`, which
 prints values, is for interactive use only, not where stdout becomes logs.
+
+### M6b analytics review (2026-11-09)
+
+`/security-review` on the M6b change: no findings at the reporting bar. It checked migration 0007's
+role interpolation (validated with `ROLE_NAME`, constant table name) and grants (DML on
+`activity_metrics` only; no sequence); bound parameters in every new query; that logs, `analyze`
+output, `status` and `sync_run.counts` carry counts and codes only; that the HR load coefficient
+has no column, shows as `set` in `config` and isn't echoed by validation errors; and CHECK
+constraints on every code column. One hardening note, applied: the coefficient is now left out of
+the `repr` of `Settings` and `AnalyticsOptions`, although no code path printed either. One note
+accepted as designed (ADR 0013, *M6b as built*): a database reader could test both coefficients
+against a row's fingerprint, but the same reader can derive it from HR load and the samples.
 
 ### B3b app code review (2026-11-07)
 

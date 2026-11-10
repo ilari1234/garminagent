@@ -77,3 +77,38 @@ def test_sync_budget_has_a_floor(monkeypatch: pytest.MonkeyPatch) -> None:
         Settings()
     monkeypatch.setenv("SYNC_MAX_REQUESTS", "10")
     assert Settings().sync_max_requests == 10
+
+
+@pytest.mark.parametrize("value", ["1.92", "1.67"])
+def test_trimp_b_accepts_the_published_coefficients(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("ANALYTICS_TRIMP_B", value)
+    settings = Settings()
+    assert settings.analytics_trimp_b == float(value)
+    assert settings.redacted()["analytics_trimp_b"] == "set"  # the value implies sex: never shown
+    assert value not in str(settings.redacted())
+
+
+@pytest.mark.parametrize("value", ["1.8", "2", "0", "-1.92", "nan"])
+def test_trimp_b_refuses_anything_else_without_echoing_it(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("ANALYTICS_TRIMP_B", value)
+    with pytest.raises(ValidationError, match=r"must be 1\.92 or 1\.67") as caught:
+        Settings()
+    assert f"input_value='{value}'" not in str(caught.value)
+
+
+def test_trimp_b_has_no_default_and_the_cap_a_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert Settings().analytics_trimp_b is None
+    assert Settings().redacted()["analytics_trimp_b"] is None
+    assert Settings().analytics_max_activities == 200
+    monkeypatch.setenv("ANALYTICS_MAX_ACTIVITIES", "0")
+    with pytest.raises(ValidationError, match="analytics_max_activities"):
+        Settings()
+
+
+def test_trimp_b_stays_out_of_reprs(monkeypatch: pytest.MonkeyPatch) -> None:
+    from garminagent.analytics import AnalyticsOptions
+
+    monkeypatch.setenv("ANALYTICS_TRIMP_B", "1.67")
+    settings = Settings()
+    assert "1.67" not in repr(settings)
+    assert "1.67" not in repr(AnalyticsOptions.from_settings(settings))

@@ -103,7 +103,7 @@ Every command prints JSON on stdout and logs on stderr, with no health values in
 | `status [--max-age-hours H]` | Counts, dates and stop reasons. Read-only; exits 1 if unhealthy with a max age |
 | `parse-fit` | Parse pending FIT files; no Garmin requests |
 | `renormalize DATASET` | Re-parse stored responses into a normalized table; no Garmin requests. Holds the sync lock (`already_running` if busy) |
-| `analyze` | The analytics step alone; prints counts and unmapped sport keys. Holds the sync lock; exit 1 if a part failed |
+| `analyze [--full]` | The analytics step alone; prints counts and unmapped sport keys. `--full` lifts the per-run metrics cap. Holds the sync lock; exit 1 if a part failed |
 | `thresholds set TYPE VALUE [--sport] [--from]`, `unset TYPE --from [--sport]`, `list [--at] [--sport]` | Manual thresholds; out-of-range input exits 2. `list` prints values to stdout only |
 | `purge-data --yes` | Delete all rows, then blobs. Without `--yes`, exits 2 |
 

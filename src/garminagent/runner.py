@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.analytics import AnalyticsOptions
 from garminagent.config import Settings
 from garminagent.fit import PARSER_VERSION
 from garminagent.garmin import GarminAuthError, GarminClient
@@ -83,6 +84,7 @@ def run_sync_once(
                         max_requests=max_requests or settings.sync_max_requests,
                         refetch_days=settings.sync_refetch_days,
                         activity_refetch_days=settings.sync_activity_refetch_days,
+                        analytics=AnalyticsOptions.from_settings(settings),
                     ).run()
             except GarminAuthError as exc:
                 log.error("Garmin authentication failed: %s", exc)
@@ -200,6 +202,8 @@ def status(settings: Settings, max_age_hours: float | None = None) -> tuple[dict
             name: {"from": r.start.isoformat(), "through": r.end.isoformat()} for name, r in sorted(cursors.items())
         },
         "pending": {"activity_files": pending_files, "fit_files": pending_fit},
+        # Problems that don't make the sync unhealthy; codes only.
+        "warnings": [] if settings.analytics_trimp_b is not None else ["hr_load_not_configured"],
     }
     healthy = True
     if run is None:

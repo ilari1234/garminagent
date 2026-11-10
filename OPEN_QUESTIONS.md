@@ -126,3 +126,7 @@ ADR 0007 sets principles only.
     (M6f), and a lab report's free text must not reach a model. LT1 is what a 3-zone split needs,
     which is the main reason to build it. Decide when, and whether a test outranks newer Garmin
     values (as manual input does) or only until Garmin's next change.
+41. **When decoupling counts as "steady" (M6f).** ADR 0013 defines decoupling for steady sessions of
+    at least 60 min, but no source gives a rule for "steady". M6b computes it for every long
+    session with an efficiency factor; decide in M6f whether agent views filter it (for example by
+    the 3-zone split or a variability limit) and with what number.

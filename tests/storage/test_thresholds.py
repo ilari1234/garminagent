@@ -185,7 +185,10 @@ def test_cli_thresholds_set_list_and_unset(cli_env: None, app_sessions: sessionm
         "source": "manual",
         "sport": "run",
         "valid_from": "2026-03-01",
+        "backfilled": False,
     }
+    before = json.loads(invoke("thresholds", "list", "--at", "2026-02-01", "--sport", "run").stdout)
+    assert before["at"]["values"]["lthr"]["backfilled"] is True  # the owner's backward fill
     assert out["at"]["values"]["ftp"] is None
 
     assert invoke("thresholds", "unset", "lthr", "--sport", "run", "--from", "2026-03-01").exit_code == 0

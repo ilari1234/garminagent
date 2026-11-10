@@ -138,6 +138,8 @@ def test_status_and_health(settings: Settings, fake_garmin: FakeGarmin, app_sess
     assert report["last_run"]["complete"] is True
     assert set(report["datasets"]) >= {"daily_summaries", "activities", "sleep", "hrv", "weight"}
     assert report["pending"] == {"activity_files": 0, "fit_files": 0}
+    assert report["warnings"] == ["hr_load_not_configured"]  # ANALYTICS_TRIMP_B unset (ADR 0013)
+    assert status(settings.model_copy(update={"analytics_trimp_b": 1.92}))[0]["warnings"] == []
 
     with app_sessions.begin() as session:  # a failed latest run makes it unhealthy
         last = session.scalars(select(SyncRun).order_by(SyncRun.id.desc()).limit(1)).one()

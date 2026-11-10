@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from garminagent.analytics import ANALYTICS, run_analytics
+from garminagent.analytics import ANALYTICS, AnalyticsOptions, run_analytics
 from garminagent.fit import PARSER_VERSION, FitParseError, parse_fit
 from garminagent.garmin import (
     RANGE_LIMITS,
@@ -163,6 +163,7 @@ class Syncer:
         refetch_days: int = 3,
         activity_refetch_days: int = 7,
         page_size: int = ACTIVITY_PAGE_SIZE,
+        analytics: AnalyticsOptions | None = None,
     ) -> None:
         self._client = client
         self._sessions = sessions
@@ -173,6 +174,7 @@ class Syncer:
         self._refetch_days = refetch_days
         self._activity_refetch_days = activity_refetch_days
         self._page_size = page_size
+        self._analytics = analytics or AnalyticsOptions()
         self._report = SyncReport()
 
     def run(self) -> SyncReport:
@@ -232,7 +234,7 @@ class Syncer:
             log.error("FIT parsing stopped after unexpected error: %s", exc.__class__.__name__)
             if self._report.stopped in (None, "budget"):
                 self._report.stopped = INTERNAL_ERROR
-        self._report.counts[ANALYTICS] = run_analytics(self._sessions, athlete)
+        self._report.counts[ANALYTICS] = run_analytics(self._sessions, athlete, self._analytics)
         log.info(
             "sync %s after %d requests: %s",
             "complete" if self._report.complete else f"stopped ({self._report.stopped})",

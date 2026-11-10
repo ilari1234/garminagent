@@ -142,10 +142,25 @@ run it again afterwards.
 ## Analytics and thresholds
 
 Every sync ends with the `analyze` step (phase 2, ADR 0013); `garminagent analyze` runs it alone.
-In M6a it groups activities by sport and rebuilds the threshold timeline. It never fails a sync:
+It groups activities by sport, rebuilds the threshold timeline and brings the per-activity metrics
+(`activity_metrics`, M6b) up to date. It never fails a sync:
 its counts are in `sync_run.counts["analytics"]`, and a failure shows as `"errors"` there and as a
 log line naming the exception class. `analyze` prints `unmapped_sport_keys`: Garmin activity types
 not yet in a sport group (they count as `other`; add them in `garminagent/analytics/sports.py`).
+
+Metrics are recomputed only for activities whose inputs changed (FIT file, thresholds, zones, the
+settings below or a new algorithm version), at most `ANALYTICS_MAX_ACTIVITIES` (default 200) per
+run, newest first. After the upgrade to M6b the first syncs catch up over a few runs
+(`metrics_pending` counts what is left), or at once with:
+
+```bash
+docker compose run --rm app analyze --full
+```
+
+HR load needs `ANALYTICS_TRIMP_B` in `.env`: `1.92` or `1.67`, Banister's published coefficients
+for men and for women. It has no default; while it is unset, activities without power get no load,
+`analyze` logs a warning and counts `hr_load_not_configured`, and `status` lists it under
+`warnings`. `config` shows it only as `set`. Changing it recomputes every activity.
 
 HR zones are fetched once a day (`hr_zones` in `status`) and kept as history. Thresholds come from
 three sources; on any date the first one that has a value wins:
@@ -155,7 +170,13 @@ three sources; on any date the first one that has a value wins:
 2. **garmin_zones** — max, resting and lactate threshold HR from Garmin's HR zone settings, from the
    day they were first fetched.
 3. **activity** — values Garmin sent with your activities: LTHR per sport group, FTP from rides,
-   threshold speed from runs. These cover history before the first zones fetch.
+   threshold speed from runs.
+
+If none has a value on or before the date, resting HR is the mean of your daily summaries' resting
+HR over the 7 days before (at least 3 of them). Failing that, a value's first known date holds
+backwards: history before the first zones fetch uses that fetch's max HR and LTHR. Metrics that
+used such a value are marked `thresholds_backfilled`, and `thresholds list --at` shows
+`"backfilled": true`.
 
 ```bash
 docker compose run --rm app thresholds list --at 2026-11-01 --sport run
