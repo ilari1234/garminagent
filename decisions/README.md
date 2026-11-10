@@ -15,6 +15,11 @@ Don't rewrite an accepted record's reasoning. To change a decision, add a new re
 old one superseded. Facts marked "checked on <date>" can go stale: recheck vendor facts before
 relying on them. This repo is public: no personal values, account IDs or secrets in any record.
 
+A record holds the decision, including the owner's answers to questions a build raised. How it
+was carried out (versions, implementation choices, real-data counts, what later work must
+provide) goes in [docs/build-notes/](../docs/build-notes/), which can be corrected in place
+(ADR 0017).
+
 The first 13 records were written on 2026-11-01 from the planning conversation, after the fact.
 Where the owner's reason wasn't stated, the record says so instead of inventing one.
 
@@ -35,4 +40,5 @@ Where the owner's reason wasn't stated, the record says so instead of inventing 
 | [0013](0013-analytics-design.md) | Phase 2 metric definitions and storage | Accepted |
 | [0014](0014-openapi-spec-out-of-tree.md) | Garmin's OpenAPI spec stays out of the tree | Accepted |
 | [0015](0015-sync-failure-handling.md) | Sync failure handling after the phase 1 review | Accepted |
-| [0016](0016-status-from-git.md) | Status that git holds is read from git, not copied | Accepted |
+| [0016](0016-status-from-git.md) | Status that git holds is read from git, not copied | Accepted; refined by 0017 |
+| [0017](0017-build-notes-out-of-adrs.md) | ADRs hold decisions; build notes live in docs/build-notes/ | Accepted |

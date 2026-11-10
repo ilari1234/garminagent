@@ -257,7 +257,7 @@ None of this adds a migration. B3b touches `cli.py`, `config.py`, `pyproject.tom
 M6 PRs also touch; it rebases after them.
 
 **B3b is built** (2026-11-07). What it asks of B3c and B3d (task role permissions, environment, the
-master secret's keys) is listed in ADR 0008, *B3b implementation*.
+master secret's keys) is listed in [build notes](build-notes/aws.md#b3b-implementation-2026-11-07).
 
 ## Terraform layout and state
 

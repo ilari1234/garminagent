@@ -125,7 +125,7 @@ output, `status` and `sync_run.counts` carry counts and codes only; that the HR 
 has no column, shows as `set` in `config` and isn't echoed by validation errors; and CHECK
 constraints on every code column. One hardening note, applied: the coefficient is now left out of
 the `repr` of `Settings` and `AnalyticsOptions`, although no code path printed either. One note
-accepted as designed (ADR 0013, *M6b as built*): a database reader could test both coefficients
+accepted as designed ([analytics build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)): a database reader could test both coefficients
 against a row's fingerprint, but the same reader can derive it from HR load and the samples.
 
 ### B3b app code review (2026-11-07)
