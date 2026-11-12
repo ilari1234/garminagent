@@ -1,2 +1,14 @@
 # Copy to terraform.tfvars (gitignored) and fill in. Never commit the real file.
-account_id = "<12-digit member account ID>"
+# Every placeholder fails validation if left unfilled.
+account_id        = "<12-digit member account ID>"
+state_bucket_name = "<member account state bucket name>"
+
+# The repository the OIDC role trusts. Public values; read them with
+# gh api repos/OWNER/REPO --jq '{owner: .owner.login, owner_id: .owner.id, repo: .name, repo_id: .id}'
+github_owner         = "<owner>"
+github_owner_id      = "<owner id>"
+github_repository    = "<repo>"
+github_repository_id = "<repo id>"
+
+# Default, shown for reference:
+# github_environment = "ecr-push"

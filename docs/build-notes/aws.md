@@ -34,6 +34,69 @@ Release dates rechecked with
   `terraform` apply, destroy, plan, refresh, state, show, output, console, import and
   force-unlock. They match command text, so they back up the rule rather than enforce it.
 
+## B1 implementation (2026-11-09)
+
+`infra/org` and `infra/account`; nothing from B2 or B3. AWS and
+GitHub facts checked on 2026-11-09. Versions unchanged from B0 (Terraform 1.17.1, `hashicorp/aws`
+6.71.0 with the committed lock files); no modules. The owner's steps:
+[docs/aws-b1-checklist.md](../aws-b1-checklist.md).
+
+- **Done by hand, then imported or looked up.** The Identity Center organization instance can only
+  be enabled in the console (`CreateInstance` makes account instances and is rejected in a
+  management account), and its MFA settings have no API. The console creates the organization
+  along with it, so Terraform **imports** the organization rather than creating it. The one user is
+  created by hand and looked up by user name. A temporary `Bootstrap` permission set carries the
+  first apply and is deleted afterwards; Terraform owns every lasting permission set and assignment.
+- **Centralized root access** (`RootCredentialsManagement`, `RootSessions`) is enabled before the
+  member account is created, so that account never has root credentials (IAM: centralized root
+  access). The owner confirms it with `sts assume-root` scoped to `IAMAuditRootUserCredentials`.
+  `OrganizationAccountAccessRole` stays as the way back in if Identity Center fails; it grants
+  nothing `WorkloadAdmin` doesn't.
+- **Trusted access** is exactly CloudTrail, IAM and Identity Center. SCPs are enabled.
+- **Permission sets.** `ManagementAdmin`: `AdministratorAccess` plus an inline deny of `bedrock:*`
+  and `bedrock-mantle:*`, a guardrail against accidental use rather than a boundary (an admin can
+  still create a role without it). `WorkloadAdmin`: `AdministratorAccess` in the member account. One-hour
+  sessions, because a role session outlives a revoked sign-in until it expires (Identity Center:
+  authentication sessions). B2 adds `BedrockUser`.
+- **Budget.** $25 a month on cost, gross of credits and refunds, alerts at 50, 80 and 100 % of
+  actual and forecast. The action sits on the same budget at an **absolute $50 of actual spend**:
+  automatic, it attaches `budget-deny-invoke` (`bedrock:Invoke*`, `StartAsyncInvoke`,
+  `CreateModelInvocationJob`, `bedrock-mantle:*`) to the `workload` OU. Its role trusts
+  `budgets.amazonaws.com` for this budget only (`aws:SourceAccount`, and `aws:SourceArn` matching
+  the budget or `budget/<name>/action/*`: AWS doesn't document which one Budgets presents, so the
+  owner fires the action once with a tiny budget, checklist section 8) and may attach or detach
+  only that policy on that OU, narrower than AWS's example. The owner reverses the action by hand.
+- **Organization trail.** Multi-Region, global service events, log file validation. Its bucket
+  keeps log files a year and overwritten or deleted versions 90 days; the bucket policy is AWS's
+  organization-trail policy with `aws:SourceArn` pinned to this trail. Not sent to CloudWatch
+  Logs, not KMS-encrypted (Trivy exceptions, reasons inline).
+- **State and buckets.** All three buckets: public access blocked, ACLs disabled, versioned,
+  TLS only, `prevent_destroy`, no server access logging (the trail records management calls).
+  The management account's two use **SSE-S3**: one customer-managed key is planned, in the member
+  account, and that state holds IDs, ARNs and two emails but no secrets. The member state bucket
+  uses SSE-KMS with a bucket key, and its policy refuses writes asking for other encryption,
+  another key, or `aws:kms` without a key ID (which S3 would encrypt with `aws/s3`).
+- **KMS key** (`alias/garminagent`): rotation on, 30-day deletion window, policy delegating to IAM
+  only. B3c adds the service statements RDS, S3 and Secrets Manager need.
+- **GitHub OIDC.** Provider without a thumbprint (IAM trusts GitHub's CA). `gha-ecr-push` has no
+  policy, one-hour sessions, and `StringEquals` on the audience and on one subject:
+  `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:ecr-push`. GitHub documents that ID format for
+  repositories created after 15 July 2026 with a branch example; the environment form is inferred,
+  and B3c's first run confirms it. The IDs are public and come from tfvars. **B3c must** keep the
+  push job off `pull_request_target` and `workflow_run`: both run on `main`, so they would pass
+  the environment's main-only rule with a fork's influence.
+- **Access Analyzer**: external access, account zone (free).
+- **No personal data in plans.** Emails and the SSO user name are `sensitive` variables;
+  `for_each` keys are fixed words (`state`, `trail`).
+- **Tests**: mocked provider with synthetic values; runs use `command = apply` against the mock to
+  assert computed policies: SCP actions, the permission set deny, budget thresholds and action
+  target, the budget role's trust conditions, bucket controls, the trail's flags and
+  `aws:SourceArn`, the KMS key policy, the OIDC trust (provider, action, exact subject, audience,
+  no `StringLike`), and rejection of each example file's literal placeholders. "No policy on
+  `gha-ecr-push`" is checked in review, not by a test.
+- **Review** ([docs/reviews/b1-review.md](../reviews/b1-review.md), 2026-11-12): ready after
+  fixes; M1–M3 and L1–L5 fixed before the PR.
+
 ## B3b implementation (2026-11-07)
 
 App code only; no `infra/` change, no AWS resource, no

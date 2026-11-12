@@ -3,7 +3,7 @@
 **Status:** Accepted. Direction: AWS, Terraform, local until then, staged (owner, 2026-10-24 and
 2026-10-29). Design: produced by the AWS planning session on 2026-11-01, accepted by the owner on
 2026-11-03 with the defaults below. Detail: [docs/aws-deployment.md](../docs/aws-deployment.md).
-Vendor facts and prices are as of 2026-11-01. B0 (2026-11-03) and B3b (2026-11-07) are built: see
+Vendor facts and prices are as of 2026-11-01. B0 (2026-11-03), B1 (2026-11-09; the owner applies it) and B3b (2026-11-07) are built: see
 [docs/build-notes/aws.md](../docs/build-notes/aws.md) (ADR 0017).
 
 ## Context
@@ -89,3 +89,5 @@ provide are in [docs/build-notes/aws.md](../docs/build-notes/aws.md).
 - Two opt-in Regions are enabled solely to pin their retention setting; the Region SCP keeps them
   otherwise unusable.
 - Remaining checks before implementation are in OPEN_QUESTIONS 8 and 9.
+- B1's organization and Identity Center instance exist before Terraform does (console, then
+  import); rebuilding them from code alone isn't possible.

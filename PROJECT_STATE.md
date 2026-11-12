@@ -31,8 +31,8 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | M6f | Planned (ADR 0013) | Track A | | |
 | AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
 | AWS B0 tooling | **Done**; its `infra-*` checks are required on `main` | | | |
-| AWS B1 foundation | **Next** | Track B | B0 | Owner applies |
-| AWS B2 Bedrock | Planned | Track B | B1 | Owner applies; no real prompt before its retention verification |
+| AWS B1 foundation | **Done** (code; [build notes](docs/build-notes/aws.md#b1-implementation-2026-11-09), [review](docs/reviews/b1-review.md)) | Owner's terminal | B0 | Owner applies by [docs/aws-b1-checklist.md](docs/aws-b1-checklist.md) |
+| AWS B2 Bedrock | **Next** | Track B | B1 | B1 applied; owner applies; no real prompt before its retention verification |
 | AWS B3a blob store seam | **Done** | | | |
 | AWS B3b app code | **Done** ([build notes](docs/build-notes/aws.md#b3b-implementation-2026-11-07): what B3c/B3d must provide) | | B3a | |
 | AWS B3c–d workload | Planned | Track B | B1, B3b; B3c after OPEN_QUESTIONS 8 | Owner applies |
@@ -49,12 +49,15 @@ Chores (Dependabot, CVE bumps) go to a separate short session.
 Open items only. Each one points at its row above instead of restating it.
 
 1. **Track A:** M6c–M6e, in any order. Each ends with a `reviewer` subagent review.
-2. **Track B:** B1, then B2. B3c/B3d must pass `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off
-   on AWS.
-3. **Phase 3 design:** a fresh, read-only planning session can start now, alongside M6c (M6b's
+2. **Owner, own terminal:** apply B1 by [docs/aws-b1-checklist.md](docs/aws-b1-checklist.md)
+   (console steps, `org` and `account` applies, state migration, section 8 checks including firing
+   the budget action once), then record the checks as yes/no in SECURITY.md's B1 review.
+3. **Track B:** B2 once B1 is applied (its code can start before). B3c/B3d must pass
+   `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off on AWS.
+4. **Phase 3 design:** a fresh, read-only planning session can start now, alongside M6c (M6b's
    numbers are confirmed on real data). It settles OPEN_QUESTIONS 11 first (ADR 0007 and ADR 0013
    disagree on the acute:chronic ratio), before any limit numbers, then the rest of 10–18.
-4. **Before phase 3 is built:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
+5. **Before phase 3 is built:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
    before any real prompt.
 
 ## What exists today
@@ -65,7 +68,7 @@ this section lists only what the tree doesn't show.
 - **Runtime:** local Docker only (`db`, `migrate`, `scheduler`, plus `app` in the `manual` profile).
 - **CI on `main`:** lint, test, pip-audit, zizmor, cosign and Trivy scan, image to private GHCR,
   CodeQL, and the `infra-*` checks (all without AWS credentials).
-- **Infra:** `infra/org`, `infra/account` and `infra/workload` exist but nothing is applied yet.
+- **Infra:** `infra/org` and `infra/account` hold B1's resources, applied by the owner after merge; `infra/workload` has none until B3c.
 - **Garmin's OpenAPI spec** isn't in the tree (ADR 0014); keep a local copy at the gitignored
   `docs/garmin-personal-api/openapi.json`.
 

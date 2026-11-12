@@ -6,8 +6,8 @@ the detail. Accepted by the owner on 2026-11-03. Vendor facts and prices were ch
 HashiCorp, OpenTofu and GitHub documentation on 2026-11-01 ([sources](#sources)); recheck them at each
 stage, because they change.
 
-Nothing here is built yet. Every `terraform apply`, every run against AWS and every secret value is
-the owner's, in the owner's terminal.
+Built so far: B0, B1 (code; the owner applies it after merge), B3a and B3b. Every `terraform apply`, every run
+against AWS and every secret value is the owner's, in the owner's terminal.
 
 ## Stages
 
@@ -32,11 +32,18 @@ with the SECURITY.md checklist and `/security-review`.
 
 ## B1 foundation
 
+**Built** (code 2026-11-09, reviewed 2026-11-12; applied by the owner after merge). The owner's steps, in order, are in
+[docs/aws-b1-checklist.md](aws-b1-checklist.md); what changed from this plan while building is in
+[docs/build-notes/aws.md](build-notes/aws.md#b1-implementation-2026-11-09).
+
 **By hand, once:**
 
 - Create the management account and set root MFA.
-- Enable the IAM Identity Center organization instance in `eu-north-1`. Expected to be a console
-  step; confirm during B1. One user, MFA required, no external identity provider.
+- Enable the IAM Identity Center organization instance in `eu-north-1`. **Confirmed a console
+  step** (2026-11-09): `CreateInstance` makes only account instances and is rejected in a management
+  account. One user, MFA always on (no API for MFA settings either), no external identity provider.
+  The console creates the organization with it; Terraform imports the organization.
+- A temporary `Bootstrap` permission set carries the first apply and is then deleted.
 - After that, Terraform runs with SSO credentials. There are no IAM users and no access keys anywhere.
 
 **In Terraform (`infra/org`, `infra/account`):**
@@ -54,10 +61,12 @@ with the SECURITY.md checklist and `/security-review`.
   and forecast spend. Claude charges appear under the model provider through AWS Marketplace, not
   under Bedrock, so the budget covers total cost rather than a Bedrock filter.
 - A budget action at $50 attaches a deny-invoke SCP to the `workload` OU. Billing data lags, so the
-  token and iteration caps in code (ADR 0007) stay the main control.
-- State buckets: one in the management account for `infra/org`, one in the member account for
-  `infra/account` and `infra/workload`.
-- A customer-managed KMS key in the member account, used for state and later for all data.
+  token and iteration caps in code (ADR 0007) stay the main control. Built as an action on the $25
+  budget at an absolute $50 of actual spend, so one budget carries both.
+- State buckets: one in the management account for `infra/org` (SSE-S3), one in the member account
+  for `infra/account` and `infra/workload` (SSE-KMS).
+- A customer-managed KMS key in the member account (`alias/garminagent`), used for state and later
+  for all data.
 - GitHub OIDC provider and a role `gha-ecr-push` with no permissions until B3c.
 - IAM Access Analyzer for external access.
 
@@ -237,7 +246,10 @@ same digest from GHCR to ECR. There is no rebuild. The role can push only to the
 The trust policy must use the repository's subject format. Repositories created after 15 July 2026
 use owner and repository IDs, for example `repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:ecr-push`
 ([GitHub](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)).
-Confirm it from GitHub's API before B3c, not by printing token claims in public logs. IAM rejects a
+B1 builds the trust with that format for the `ecr-push` environment, from the IDs GitHub's API
+reports; GitHub documents the ID format with a branch example, so the environment form is
+confirmed on B3c's first run, from CloudTrail if it fails, never by printing token claims in public
+logs ([checklist](aws-b1-checklist.md#9-at-b3cs-first-ci-run-confirm-the-oidc-subject)). IAM rejects a
 GitHub trust policy without a specific `sub`
 ([IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html)). The role is
 also bound to a GitHub environment that only `main` can deploy to.
@@ -399,7 +411,7 @@ out (7 days). B2 is unaffected.
 | PR | Review | SECURITY.md updates |
 |---|---|---|
 | B0 | No credentials in CI, zizmor clean, deny rules for state and plan files, new tools justified | Automated checks rows |
-| B1 | Root MFA, no IAM users, member root credentials removed, SSO MFA, OIDC `sub`, organization trail unchangeable from members, Region SCP tested, budget alerts fire | Trust boundaries (AWS, OIDC); cloud credential incident steps; quarterly SSO review |
+| B1 | Root MFA, no IAM users, member root credentials removed, SSO MFA, OIDC `sub`, organization trail unchangeable from members, budget alerts fire (the Region SCP is B2's) | Trust boundaries (AWS, OIDC); cloud credential incident steps; quarterly SSO review |
 | B2 | SCP check output; `none` read back on both APIs in all six Regions; global inference denied; invocation logging denied; no Bedrock in the management account | Bedrock controls, CSAM exception, six processing Regions, monthly retention read |
 | B3a, B3b | Keys validated; errors carry no keys or bodies; leak test covers S3; master credentials as `SecretStr` | Blob controls, new dependency, RDS CA |
 | B3c | RDS private and encrypted; S3 TLS-only and private; KMS key policy; ECR private (FIT SDK license); secrets empty in Terraform; state checked for secrets | Encryption at rest and in transit; backups vs `purge-data`; 90-day check covers ECR |

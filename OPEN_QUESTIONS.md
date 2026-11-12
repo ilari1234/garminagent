@@ -46,11 +46,15 @@ Reported by the AWS planning session, 2026-11-01. Recheck; vendor facts change.
 8. **Is `db.t4g.micro` orderable for PostgreSQL 18 in `eu-north-1`?** Owner runs
    `aws rds describe-orderable-db-instance-options` before B3c. Decided together with item 3; the
    fallback is `db.t4g.small`.
-9. **Smaller checks at implementation:** the OIDC subject (this repo uses the newer format with IDs;
-   confirm from GitHub's API before B3c, not from token claims in public logs); the action and
+9. **Smaller checks at implementation:** the OIDC subject (B1 builds the trust with the ID format for
+   the `ecr-push` environment, from the IDs GitHub's API reports; GitHub documents only a branch example
+   of that format, so the environment form is confirmed on B3c's first run, from CloudTrail if it
+   fails, never from token claims in public logs: docs/aws-b1-checklist.md section 9); the action and
    condition for denying long-lived Bedrock API keys (B2); whether `id-token` is blocked on fork PRs
    (low priority: the environment rule covers it); prices (B3c). *Resolved in B0:* TFLint's AWS
-   ruleset is pinned by hash after verifying its release attestation (ADR 0008).
+   ruleset is pinned by hash after verifying its release attestation (ADR 0008). *Resolved in B1
+   (2026-11-09):* the Identity Center organization instance and its MFA settings are console-only, so
+   the organization is imported (docs/build-notes/aws.md, *B1 implementation*).
 
 ## Phase 3 design (not started)
 

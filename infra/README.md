@@ -1,13 +1,14 @@
 # infra
 
 Terraform for the AWS deployment. Plan and stages: [docs/aws-deployment.md](../docs/aws-deployment.md);
-decision: [ADR 0008](../decisions/0008-cloud-deployment.md). Stage B0 (this skeleton) creates no
-resources.
+decision: [ADR 0008](../decisions/0008-cloud-deployment.md). B0 built this skeleton; B1 fills `org/`
+and `account/` (the owner's steps: [docs/aws-b1-checklist.md](../docs/aws-b1-checklist.md)).
+`workload/` has no resources until B3c.
 
 | Root | Account | Holds |
 |---|---|---|
-| `org/` | management | organization, OU, SCPs, SSO, budgets, organization trail, own state bucket |
-| `account/` | member | state bucket and KMS key, GitHub OIDC provider and role, Access Analyzer |
+| `org/` | management | organization, `workload` OU and member account, centralized root access, SSO permission sets, budget and its deny-invoke SCP, organization trail and its bucket, own state bucket (B1); Bedrock SCPs (B2) |
+| `account/` | member | KMS key, state bucket for `account/` and `workload/`, GitHub OIDC provider and `gha-ecr-push` role with no permissions, Access Analyzer (B1) |
 | `workload/` | member | VPC, RDS, S3, ECR, secrets, ECS, schedules, alarms |
 | `scripts/` | | `plan_summary.py`; `bedrock-retention` comes with B2 |
 | `policy/` | | custom Trivy checks (Rego) |
@@ -40,11 +41,12 @@ terraform apply plan.tfplan
 `plan_summary.py` prints resource addresses and actions only, never values. Share its output, not
 the plan.
 
-**Bootstrapping a state bucket** (`org` and `account`, B1): the root that creates its own bucket
+**Bootstrapping a state bucket** (`org` and `account`): the root that creates its own bucket
 starts on local state, through a gitignored `backend_override.tf` containing
 `terraform { backend "local" {} }`, then moves to the bucket with
-`terraform init -migrate-state -backend-config=backend.hcl` after deleting the override. B1
-documents the exact steps.
+`terraform init -migrate-state -backend-config=backend.hcl` after deleting the override. `org`
+also imports the organization, which is created by hand together with Identity Center. Exact
+steps, in order: [docs/aws-b1-checklist.md](../docs/aws-b1-checklist.md).
 
 ## Conventions
 
@@ -56,6 +58,11 @@ documents the exact steps.
 - **Real `*.tfvars`, `backend.hcl`, state and plans stay out of git** (`.gitignore`). Example
   files hold placeholders that fail validation if left unfilled.
 - Every provider block sets an EU `region` explicitly (Trivy check `GA001` in `policy/`).
+- **Tests** (`<root>/tests/*.tftest.hcl`) use a mocked provider with synthetic values (shared ones in
+  `tests/mocks/`). Runs use `command = apply` where assertions need computed values: against the
+  mock, that creates nothing and calls no API.
+- **Trivy exceptions** are inline `#trivy:ignore:<ID>` comments, each under a comment giving the
+  reason. Add one only with a reason, and only for a finding that actually fires.
 
 ## Running the checks locally
 
