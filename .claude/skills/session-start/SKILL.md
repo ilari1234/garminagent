@@ -1,6 +1,7 @@
 ---
 name: session-start
-description: Start-of-session briefing for garminagent, built from git and GitHub instead of from memory (ADR 0016). Use at the start of every session, before picking up a task, and whenever asked "where do things stand", "what's open" or "which track is free".
+description: Start-of-session briefing for garminagent, built from git and GitHub instead of from memory (ADR 0016), and set-up for a named task. Use at the start of every session, when asked to start or pick up a task ("start an M6c session", "/session-start B1"), and whenever asked "where do things stand", "what's open" or "which track is free".
+argument-hint: "[task, e.g. M6c or B1]"
 ---
 
 # Session start
@@ -53,3 +54,26 @@ Stale state: <anything PROJECT_STATE says that git contradicts, or "none">
 - If both tracks are taken and the task is implementation work, stop and ask the user.
 - If PROJECT_STATE contradicts git, say so in the report. Fix it only as part of a PR the user
   asked for.
+
+## 5. When a task is named
+
+Task: `$ARGUMENTS` (empty means briefing only; stop after step 3). A task named in the user's
+message ("start an M6c session") counts too.
+
+1. **Map it to a track.** `M6…` (or other phase milestones) is track A, `B…` is track B. Anything
+   else (docs, a fix, a chore, a planning topic) is a side task; planning and review sessions are
+   read-only and don't take a track.
+2. **Check the track.** If another branch holds it (open PR or worktree), stop and ask the user.
+   If a worktree for *this* task already exists, it may be unfinished work from an earlier
+   session: report its branch and `git -C <path> status --short` counts, and ask whether to
+   continue there. Never start a second copy.
+3. **Read for the task**: the track's entry doc (`docs/tracks/application.md` or
+   `docs/tracks/infrastructure.md`), the task's part of its spec (ADR 0013 for M6, the stage's
+   section of `docs/aws-deployment.md` for B), the build notes it builds on, and the
+   OPEN_QUESTIONS items it touches.
+4. **Create the worktree** from `origin/main`, branch named after the task:
+   `git worktree add .claude/worktrees/<branch> -b <branch> origin/main` with `<branch>` like
+   `m6c-<topic>` or `infra-b2`. Work only there from now on.
+5. **Report a plan**: what the task delivers according to the spec, the files and tables it
+   touches, open questions that block or shape it, what the owner must do or decide, and how it
+   will be checked. Then ask before writing code.
