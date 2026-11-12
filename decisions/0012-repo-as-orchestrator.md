@@ -1,7 +1,9 @@
 # 0012: The repo, not a session, holds project state
 
 **Status:** Accepted (owner's brief, 2026-11-01). Refined by [0016](0016-status-from-git.md):
-facts git holds are read from git, not copied into `PROJECT_STATE.md`.
+facts git holds are read from git, not copied into `PROJECT_STATE.md`. The coordinator session
+that outlived this brief was retired on 2026-11-12 (owner); briefings come from the
+`session-start` skill.
 
 ## Context
 

@@ -23,8 +23,12 @@ The repo is the orchestrator; no session's memory is. See
   and it's often behind `origin/main`. Work in your own worktree under `.claude/worktrees/<branch>`,
   cut from `origin/main`.
 - At most two implementation sessions, one per track (A: `src/` and migrations; B: `infra/`).
-  Chores (Dependabot, CVE bumps) go to a separate short session. If both tracks are taken, do only
-  read-only work or ask the user.
+  Chores (Dependabot, CVE bumps) go to a separate short session. Read-only planning and review
+  sessions don't count toward the two, but must not edit files a track owns. If both tracks are
+  taken, do only read-only work or ask the user.
+- **No coordinator session.** The long-lived manager role ended on 2026-11-12; any session gets a
+  current briefing from `session-start`. Planning sessions are started fresh for one topic and end
+  by landing ADRs and OPEN_QUESTIONS changes in a PR.
 - Any session that changes architecture, schema, contracts or conventions must add or update an
   ADR and update `PROJECT_STATE.md` in the same change. A milestone PR marks its own row Done;
   no follow-up "Record X as merged" PR. Close a milestone with the `milestone-close` skill. ADRs
@@ -35,6 +39,13 @@ The repo is the orchestrator; no session's memory is. See
   under `docs/reviews/`.
 - Never put secrets, tokens or Terraform state in the repo or in chat.
 - A `Proposed` ADR isn't approved: ask the user before building on it.
+
+## Working with the owner
+
+- Give honest trade-offs backed by facts checked now, with dates and sources, and the reason
+  behind each tool or vendor choice. Weigh options against finishing the project, not in isolation.
+  Security is built in from the start, not added later.
+- Ask for each decision separately with a clear yes/no question, rather than batching decisions.
 
 ## Commands
 
@@ -60,8 +71,17 @@ docker compose up -d db      # local Postgres 18 on 127.0.0.1:5432
 - **Branches and pull requests only.** `main` is protected by a ruleset (no direct pushes, no
   force pushes, squash merge only, all CI checks and CodeQL required). Per task: create a branch
   (`m3-storage`, `fix/…`, `docs/…`), commit there, push it and open a PR that fills in the
-  template's security checklist. Commit, push and merge only when the user asks; merge only
-  with all checks green, using `gh pr merge --squash --delete-branch`.
+  template's security checklist.
+- **Two owner decisions per PR.** (1) Ask before committing, pushing and opening the PR.
+  (2) After opening it, watch the checks yourself in the background (`gh pr checks <n> --watch`),
+  tell the user the result as soon as they finish (all green, or which check failed), and ask
+  whether to merge. Don't make the user poll CI, and never merge without their answer to that
+  question. Merge with `gh pr merge <n> --squash --delete-branch`; auto-merge is disabled. If a
+  required check never appears, re-run the workflow (`gh run rerun <run-id>`).
+- **Clean up after yourself.** Once your PR is merged, remove your worktree and local branch:
+  move out of the worktree first (Windows won't delete a folder a session is in), then
+  `git worktree remove .claude/worktrees/<name>` and `git branch -D <branch>`. Never remove a
+  worktree with uncommitted changes, or one another session owns.
 - The repo is **public**: everything committed, every CI log and every PR comment is visible
   to anyone.
 

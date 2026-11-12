@@ -2,7 +2,8 @@
 
 Everything unresolved or deferred, as of 2026-11-07. Each item has enough context to pick up cold.
 **Owner** means only the project owner can answer or do it. Remove an item when it's settled, and
-record the answer in an ADR if it's a decision.
+record the answer in an ADR if it's a decision. Items are cited by number across the repo: never
+renumber, and never reuse the number of a removed item.
 
 This repo is public: report findings as structure and counts, never real values.
 

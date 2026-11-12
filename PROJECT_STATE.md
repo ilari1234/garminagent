@@ -1,7 +1,7 @@
 # Project state
 
 **What git can't tell you:** owners, blockers, decisions waiting on the owner, and what comes next.
-Last updated 2026-11-10. Facts that git and GitHub already hold are read from them, not copied here
+Last updated 2026-11-12. Facts that git and GitHub already hold are read from them, not copied here
 ([ADR 0016](decisions/0016-status-from-git.md)):
 
 | Question | Ask |
@@ -26,7 +26,7 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | Real-data check | **Done** 2026-11-03 | Owner's terminal | Phase 1 | |
 | Phase 2 design | **Accepted** 2026-11-03 ([ADR 0013](decisions/0013-analytics-design.md)) | | | |
 | M6a thresholds, zones, `analyze` | **Done** ([build notes](docs/build-notes/analytics.md#m6a-as-built-2026-11-07)) | | | |
-| M6b per-activity metrics | **Done** ([build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)) | | M6a | Owner's terminal run (next steps, 1) |
+| M6b per-activity metrics | **Done** ([build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)) | | M6a | |
 | M6c–M6e | **Next**, any order | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
 | M6f | Planned (ADR 0013) | Track A | | |
 | AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
@@ -48,13 +48,13 @@ Chores (Dependabot, CVE bumps) go to a separate short session.
 
 Open items only. Each one points at its row above instead of restating it.
 
-1. **Owner, own terminal:** run `renormalize daily_summaries` once (resting HR now feeds HR load),
-   then `analyze --full`, and check its counts: `hr_load_not_configured` should be 0 and `load_hr`
-   should cover most activities (M6b).
-2. **Track A:** M6c–M6e, in any order. Each ends with a `reviewer` subagent review.
-3. **Track B:** B1, then B2. B3c/B3d must pass `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off
+1. **Track A:** M6c–M6e, in any order. Each ends with a `reviewer` subagent review.
+2. **Track B:** B1, then B2. B3c/B3d must pass `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off
    on AWS.
-4. **Before phase 3 starts:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
+3. **Phase 3 design:** a fresh, read-only planning session can start now, alongside M6c (M6b's
+   numbers are confirmed on real data). It settles OPEN_QUESTIONS 11 first (ADR 0007 and ADR 0013
+   disagree on the acute:chronic ratio), before any limit numbers, then the rest of 10–18.
+4. **Before phase 3 is built:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
    before any real prompt.
 
 ## What exists today
