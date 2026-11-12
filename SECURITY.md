@@ -12,7 +12,7 @@ send, or depend on.
 | Garmin access tokens | Same reach as the key for 24 h. |
 | Health data (HR, HRV, sleep, stress, weight, cycle data) | GDPR special-category personal data. |
 | GPS start points and tracks | Reveal home and work locations. |
-| AWS / Anthropic credentials (later) | Cost, and access to all stored data. |
+| AWS access: the management root user, Identity Center sign-in and role sessions, the GitHub OIDC role (B1) | Cost, control of the organization and its audit trail, and access to all stored data once B3 runs. |
 
 ## Trust boundaries
 
@@ -21,7 +21,18 @@ send, or depend on.
         (Garmin)              (our code)     (local / AWS, encrypted)            (derived metrics only)       (AWS)
  Developer machine: .env, data/, Docker  ·  Claude Code (reads code and structure-only reports, never data/ or .env)
  GitHub: code, CI, images in GHCR (no personal data ever)
+ AWS (B1): management account (organization, Identity Center, trail + its bucket, budgets) ──SCPs──▶ workload OU ──▶ member account (KMS key, state; workload from B3c)
+   people: one Identity Center user, MFA always on, 1 h role sessions · CI: GitHub OIDC ──▶ gha-ecr-push (no permissions until B3c)
+   no IAM users or access keys anywhere · management root: MFA, no keys · member root: no credentials
 ```
+
+**AWS boundaries (B1).** SCPs bind the member account but not the management account, so
+Bedrock is kept out of the management account by the `ManagementAdmin` permission set's own
+deny. Management account admins can reach everything, including the member account
+(`WorkloadAdmin`, `OrganizationAccountAccessRole`) and the trail; the trail records what they
+do, and member accounts can't stop or change it. The only path from public CI into AWS is
+`gha-ecr-push`, which trusts one OIDC subject (this repository by ID, in the `ecr-push`
+environment) and grants nothing until B3c.
 
 ## Threats and controls
 
@@ -41,6 +52,13 @@ send, or depend on.
 | Personal data in the repo or chat | Synthetic fixtures only; Claude Code denied reading `.env*` and `data/**`, and a PreToolUse hook blocks Bash and PowerShell commands that name them, including absolute paths and globs, failing closed if it can't run (command-text rules: a backstop, not a boundary; tested) | tests, `.claude/settings.json`, `scripts/claude_hooks/`, CLAUDE.md |
 | AWS account details (account IDs, ARNs, endpoints) published through Terraform files or public CI logs | State, plans, real tfvars and `backend.hcl` gitignored and dockerignored; infra CI has no AWS credentials, no `id-token` and never runs `plan` or touches state; plans shared only as `plan_summary.py` output (addresses and actions, tested never to print values); Claude Code denied reading those files, `~/.aws` and running `terraform` apply/plan/state commands (command-text rules: a backstop, not a boundary) | `.gitignore`, `infra.yml`, `infra/scripts/plan_summary.py`, `.claude/settings.json` |
 | Terraform changes something outside the EU or in the wrong account | Provider region fixed to `eu-north-1` and checked by a custom Trivy check (any non-EU or implicit region fails CI; the check self-tests on each run); `allowed_account_ids` in every root; account IDs validated | `infra/*/providers.tf`, `infra/policy/`, `infra.yml` |
+| AWS account takeover through long-lived credentials | No IAM users or access keys in either account; management root with MFA and no access keys; member root has no credentials (centralized root access, enabled before the account existed); people sign in through Identity Center with MFA on every sign-in and get 1-hour role sessions | `infra/org`, docs/aws-b1-checklist.md |
+| Public CI, a fork or another repository assuming an AWS role | `gha-ecr-push` trusts only `StringEquals` on the audience and one subject (owner and repository IDs, `ecr-push` environment, which only `main` may deploy to); no permissions until B3c; infra CI has no `id-token` | `infra/account/github_oidc.tf`, `infra.yml` |
+| Model calls, and prompt data, in the management account (SCPs don't bind it) | `ManagementAdmin` permission set denies `bedrock:*` and `bedrock-mantle:*` inline (tested). A guardrail against accidental use, not a boundary: an admin can create a role without the deny, which the trail records and the quarterly review looks for | `infra/org/sso.tf` |
+| Runaway spend (a loop calling Bedrock, a forgotten resource) | $25 monthly budget with alerts at 50/80/100 % of actual and forecast; at $50 actual the budget action attaches a deny-invoke SCP to the workload OU; its role can move only that SCP on that OU. Billing lags, so caps in code (ADR 0007) remain the main control | `infra/org/budgets.tf` |
+| Activity hidden or logs altered | Organization trail, multi-Region with global events; member accounts can't stop or change it; log file validation; versioned bucket, TLS only, CloudTrail may write only for this trail (`aws:SourceArn`) | `infra/org/trail.tf`, `infra/org/buckets.tf` |
+| Resources shared outside the account | IAM Access Analyzer (external access) in the member account, read in the quarterly review | `infra/account/access_analyzer.tf` |
+| Terraform state lost, corrupted or read | Versioned state buckets (90 days of history), `prevent_destroy`, public access blocked, TLS only; member state SSE-KMS with the account key and writes with other encryption refused; state is designed to hold no secrets | `infra/org/buckets.tf`, `infra/account/state.tf` |
 | Compromised Terraform provider or lint plugin | Exact provider version; `.terraform.lock.hcl` with hashes for three platforms, CI `init -lockfile=readonly`; no third-party modules; Terraform and TFLint from digest-pinned images; TFLint AWS ruleset installed by SHA-256 pinned after verifying its release attestation | `infra/`, `infra.yml` |
 | Malicious activity file (zip bomb, wrong format, corrupt member) | Size cap, FIT signature check; a zip that can't be read is marked `invalid` (`corrupt_zip`), never retried in a loop | `garmin/files.py`, `sync.py` |
 | Malformed or hostile FIT content | Garmin's maintained SDK decodes; size (64 MiB) and record (400k) caps; integrity/CRC check before reading; only known numeric fields taken, developer fields and text ignored; out-of-range values become NULL; failures marked `invalid` with a fixed reason code, never retried in a loop | `fit.py`, `sync.py` |
@@ -90,7 +108,7 @@ send, or depend on.
 |---|---|
 | M3 storage ✅ 2026-10-25 | DB credentials and roles, raw-store file permissions, encryption at rest, retention and deletion — results below |
 | Phase 3 agents | Walk the OWASP LLM and Agentic tables above; safety limits as code; tool permissions; prompt-injection tests |
-| AWS deployment | Least-privilege IAM, Secrets Manager, Bedrock retention SCP, EU regions only, CloudTrail, KMS, budget alarms. Per-stage items: [docs/aws-deployment.md](docs/aws-deployment.md#security-review-per-stage) |
+| AWS deployment | Least-privilege IAM, Secrets Manager, Bedrock retention SCP, EU regions only, CloudTrail, KMS, budget alarms. Per-stage items: [docs/aws-deployment.md](docs/aws-deployment.md#security-review-per-stage). B1 code reviewed 2026-11-12 (below); its live checks follow the owner's apply |
 
 ### M3 storage review (2026-10-25)
 
@@ -141,6 +159,22 @@ the bar, accepted: with `log_statement=ddl` the server would log SCRAM verifiers
 guessable offline only for weak passwords, and the URL passwords are generated); S3 calls don't set
 `ExpectedBucketOwner` (only matters if the bucket were deleted and its name taken by another account).
 
+### B1 foundation review (2026-11-12)
+
+B1 adds `infra/org` and `infra/account` and no application code.
+
+| Item | Answer |
+|---|---|
+| New secrets | None. No credential passes through Terraform; the OIDC provider needs no thumbprint or secret. |
+| Personal data | The member account's root email, the budget address and the Identity Center user name: gitignored tfvars and private state only, `sensitive` so plans hide them. No health data in B1. |
+| Input validation | Every variable is validated, and every example placeholder fails validation (tested). |
+| New dependencies | None: same Terraform and provider as B0, no modules. |
+| Least privilege | People: two admin sets (ManagementAdmin without Bedrock, WorkloadAdmin), 1-hour sessions. CI: `gha-ecr-push` with no permissions. Budget role: attach and detach one SCP on one OU. |
+| Trivy exceptions | Server access logging off on the three buckets, SSE-S3 in the management account, no CloudWatch Logs or KMS on the trail; reasons inline in `infra/org` and `infra/account`. |
+| Owner's live checks | After apply, docs/aws-b1-checklist.md sections 6 and 8: root MFA and no keys, no IAM users, SSO MFA prompt, member root without credentials, trail logging and refused from the member account, budget alerts and the action fire once (then reversed), Access Analyzer findings. The OIDC subject is confirmed on B3c's first run. Results recorded here as yes/no. |
+| Independent review | `reviewer` subagent, [docs/reviews/b1-review.md](docs/reviews/b1-review.md): ready after fixes, no high findings. Fixed before the PR: a checklist command that could stop the trail with management credentials (M1); the budget role's `aws:SourceArn` now also matches the budget's actions, and the owner fires the action once (M2); the member state bucket refuses `aws:kms` without a key ID (L1); tests, docs and checklist gaps (L2–L5). |
+| `/security-review` | Run 2026-11-12 on the B1 change: no findings at the reporting bar. It checked the OIDC trust (pinned audience, one exact subject, fails closed if the format is wrong), the budget role (confused-deputy conditions, one SCP on one OU), both bucket policies, the KMS key policy, the permission sets and that plans hide personal data. One note for B3c, recorded in docs/build-notes/aws.md (B1): the push job must never run on `pull_request_target` or `workflow_run`, which run on `main` and would satisfy the environment's branch rule. |
+
 ## Automated checks
 
 | Check | When | Fails on |
@@ -151,7 +185,7 @@ guessable offline only for weak passwords, and the URL passwords are generated);
 | zizmor (online) over workflows and Dependabot config | every push/PR, weekly | any finding |
 | cosign signature check of the Trivy image (exact signer identity) | every push/PR, before the scan | missing or wrong signature |
 | Trivy image scan (vulnerabilities + secrets) | every push/PR | fixable HIGH/CRITICAL, any secret |
-| `terraform fmt -check`, `init -backend=false -lockfile=readonly`, `validate`, `test` (mocked provider) per root (`infra-terraform`) | every push/PR | unformatted file, provider hash not in the lock file, invalid config, failing test |
+| `terraform fmt -check`, `init -backend=false -lockfile=readonly`, `validate`, `test` (mocked provider) per root (`infra-terraform`) | every push/PR | unformatted file, provider hash not in the lock file, invalid config, failing test (B1's tests assert the SCPs, permission set deny, budget action, bucket and trail controls, KMS policy and the OIDC trust) |
 | TFLint with the bundled Terraform rules (recommended preset) and the hash-pinned AWS ruleset (`infra-tflint`) | every push/PR | any warning or error; ruleset hash mismatch |
 | Trivy config scan of `infra/` with embedded checks and custom check GA001 (EU Regions), after cosign verifies the image (`infra-trivy`) | every push/PR | any misconfiguration; GA001 self-test not failing on a non-EU provider |
 | GitGuardian | PRs | detected secret |
@@ -168,6 +202,7 @@ The image is pushed to GHCR only when lint, tests, audit and scan pass.
 | Weekly | Read the audit results and Dependabot PRs. Image bumps: Dependabot's Docker updater ignored the cooldown once (uv 0.13.5) — check release age. uv image bumps also need `required-version` and `uv_build` in the same PR. |
 | Monthly | `uv lock --upgrade` and a PR (Dependabot can't update Python packages until it supports Python 3.15). Bump the Trivy and cosign images in ci.yml (Dependabot doesn't track them): check Aqua's advisories, take a release ≥7 days old unless it's a security fix, update `TRIVY_IMAGE` digest **and** the tag in `TRIVY_SIGNER`, and run the verify command locally first. The same Trivy and cosign pins are in `infra.yml`: bump both workflows together. Bump the Terraform and TFLint image digests and the TFLint AWS ruleset (`RULESET_URL` and `RULESET_SHA256`, after `gh attestation verify`) in `infra.yml` the same way; steps in `infra/README.md`. |
 | Every 90 days | Create a new Garmin key (90-day expiry), update `.env`, delete the old key (steps: docs/operations.md, key rotation). Reread this file and the threat model. Confirm the GHCR image is still private (`garmin-fit-sdk` license). Compare the RDS CA bundle with AWS's (see *RDS CA bundle*). |
+| Quarterly (with the 90-day routine) | **AWS access review**, in the owner's terminal, results as yes/no only. Identity Center: exactly one user, its MFA devices all known; permission sets only `ManagementAdmin` and `WorkloadAdmin` (plus `BedrockUser` from B2), assigned only to that user; no leftover `Bootstrap` set; MFA still always-on. Both accounts: `aws iam list-users` empty, `get-account-summary` shows no access keys; management root MFA on. Member root still without credentials (`sts assume-root` with `IAMAuditRootUserCredentials`, docs/aws-b1-checklist.md section 6). `list-open-id-connect-providers` shows only GitHub's; `gha-ecr-push` trust policy unchanged and, until B3c, no policies. Access Analyzer: no unexplained active findings. Trail: `get-trail-status` logging, and `aws cloudtrail validate-logs` over the last quarter passes. Budgets: alerts and the action in place; `budget-deny-invoke` attached only if the action fired. `terraform plan` in `org` and `account` shows no drift. |
 | On each new GitHub setting or integration | Least privilege; note it here. |
 
 ### Cooldown exceptions
@@ -207,9 +242,9 @@ connections, and `verify-full` still checks the endpoint's name.
 **Repository settings (owner):** the repo is public. Ruleset `prevent-push-to-main` on the
 default branch, no bypass: no deletion, no force push, linear history, PR required (0
 approvals, conversations resolved, squash only), status checks `lint`, `test`,
-`audit / pip-audit`, `audit / zizmor`, `scan`, `image` required and up to date (to add after
-B0's first green run: `infra-terraform`, `infra-tflint`, `infra-trivy`), CodeQL
-results required. Code security: Dependabot alerts and security updates, secret scanning with
+`audit / pip-audit`, `audit / zizmor`, `scan`, `image`, `infra-terraform`, `infra-tflint` and
+`infra-trivy` required and up to date (the `infra-*` checks confirmed in the ruleset on
+2026-11-09), CodeQL results required. Code security: Dependabot alerts and security updates, secret scanning with
 push protection, CodeQL default setup, private vulnerability reporting. GitHub's dependency
 graph can't process `uv.lock` with Python 3.15 yet (same limitation as Dependabot's uv
 updates). Review these settings with the 90-day routine; changing them is outside git history.
@@ -231,7 +266,11 @@ updates). Review these settings with the 90-day routine; changing them is outsid
 | Backups (`data/backups/`) copied somewhere unencrypted | Treat as disclosed: delete the copies; they contain the full health history. See docs/operations.md for where backups belong. |
 | Personal data committed or pushed | Remove it from history, force-push, delete GHCR images built from it; treat the data as disclosed to anyone with repo access. |
 | Compromised dependency/action announced | Check workflow runs that used it; rotate any secret those jobs could reach; pin to a clean version. |
-| Cloud credential exposed (later) | Revoke in IAM immediately; review CloudTrail for its use. |
+| AWS sign-in or role session leaked (SSO cache, exported keys in a log or screenshot) | Identity Center → Users → the user → end all active sessions: no new role sessions. Already issued role credentials live up to 1 hour: to cut them at once, add a statement denying `*` when `aws:TokenIssueTime` is before now to the permission set's inline policy and re-provision. For `ManagementAdmin` the next apply restores Terraform's policy; `WorkloadAdmin` has no Terraform-managed inline policy, so remove the statement by hand once the sessions have expired. Reset the user's password, check the MFA devices, then read the organization trail for what the session did. |
+| Identity Center MFA device lost | Remove the device in Identity Center; a new one is registered at the next sign-in. Locked out of Identity Center entirely: sign in as the management root user (MFA) to repair it, then sign out. |
+| Management root user suspected compromised | Sign in and change the password, check its MFA devices, confirm no access keys; search the trail for `userIdentity.type` `Root`; AWS Support if sign-in fails. |
+| Unexpected `AssumeRoleWithWebIdentity` on `gha-ecr-push` | Until B3c it grants nothing. Read the event's subject in the trail; if it isn't this repository's `ecr-push` job, replace the trust policy with a deny-all and find out how. After B3c also check ECR for pushed images. |
+| Budget alert or budget action fired | Find the cause in Cost Explorer and the trail before anything else; stop the source; then reverse the budget action in the Budgets console to detach `budget-deny-invoke`. |
 
 ## Reporting
 

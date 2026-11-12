@@ -1,3 +1,4 @@
 # Copy to backend.hcl (gitignored) and fill in; then `terraform init -backend-config=backend.hcl`.
-bucket = "<state bucket name>"
-kms_key_id = "<ARN of the state KMS key>"
+# The member account's state bucket and KMS key, both created by infra/account (B1).
+bucket     = "<member account state bucket name>"
+kms_key_id = "<ARN of the garminagent KMS key>"

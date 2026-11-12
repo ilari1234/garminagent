@@ -1,3 +1,4 @@
 # Copy to backend.hcl (gitignored) and fill in; then `terraform init -backend-config=backend.hcl`.
-bucket = "<state bucket name>"
-kms_key_id = "<ARN of the state KMS key>"
+# Both are created by this root itself: see docs/aws-b1-checklist.md for the bootstrap.
+bucket     = "<member account state bucket name, same as state_bucket_name>"
+kms_key_id = "<ARN of the garminagent KMS key>"

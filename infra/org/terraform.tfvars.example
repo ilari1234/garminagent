@@ -1,2 +1,13 @@
 # Copy to terraform.tfvars (gitignored) and fill in. Never commit the real file.
-account_id = "<12-digit management account ID>"
+# Every placeholder fails validation if left unfilled.
+account_id             = "<12-digit management account ID>"
+workload_account_email = "<root email of the member account, unused by any AWS account>"
+sso_user_name          = "<Identity Center user name>"
+budget_email           = "<address for budget alerts>"
+state_bucket_name      = "<org state bucket name>"
+trail_bucket_name      = "<organization trail bucket name>"
+
+# Defaults, shown for reference:
+# workload_account_name = "garminagent-workload"
+# budget_limit_usd      = 25
+# budget_action_usd     = 50
