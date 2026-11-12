@@ -39,7 +39,8 @@ Only if needed: [docs/plan.md](../plan.md) (phase 2 milestones, data handling fo
   on every refetch, so derive recompute from fingerprints, not timestamps (as M6b does).
 - **Real data runs are the owner's.** `renormalize`, `analyze` and `scripts/real_data_check.py`
   against the real database run in the owner's terminal. You may add counts-only sections to the
-  check script.
+  check script. Hand over the exact commands in a fenced block, say which counts to check and what
+  they should be, and ask the owner to paste back counts only.
 - **Phase 3 is coming:** anything that may reach a model later follows *Data handling* in
   docs/plan.md (derived metrics only, no GPS, free text or IDs).
 

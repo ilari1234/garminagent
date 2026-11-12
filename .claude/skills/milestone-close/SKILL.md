@@ -63,9 +63,13 @@ real-data findings (counts only), and what later work must provide.
 
 ## 7. The PR
 
-- Ask the user before committing and pushing.
+- **Decision 1:** ask the user before committing, pushing and opening the PR.
 - Write the commit message and PR body to files (Write tool) and pass them with `-F` and
   `--body-file`; the hook blocks some Markdown in heredocs.
 - Fill in the PR template's *Project state* and *Security checklist* with answers, not just ticks.
-- Merge only when the user asks and every required check is green:
+- Watch the checks in the background (`gh pr checks <n> --watch`) and report as soon as they
+  finish: all green, or which check failed and why. The user shouldn't have to poll.
+- **Decision 2:** ask whether to merge. Merge only on their yes, with every required check green:
   `gh pr merge <n> --squash --delete-branch`.
+- After the merge, move out of the worktree, then remove it and the local branch
+  (`git worktree remove …`, `git branch -D …`).

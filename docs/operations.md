@@ -264,3 +264,5 @@ at the RDS CA bundle. Locally the compose init script stays the bootstrap: there
 | Sync stays at `budget` for days | very long history | normal while catching up; or raise `SYNC_MAX_REQUESTS` cautiously |
 | Scheduler `unhealthy` | last run failed or none in 13 h | `docker compose run --rm app status`, then the table above |
 | `activity file rejected (...)` / `FIT file rejected (...)` in logs | a file Garmin served can't be used | marked `invalid`, not retried; nothing to do |
+| PR blocked although every check shown is green | GitHub never created a required job (seen on #8: `image` didn't start although its `needs` passed) | `gh run rerun <run-id>`; if it happens again, push an empty commit |
+| Leftover folders under `.claude/worktrees/` | a session ended without cleaning up | if `git worktree list` shows it, it's clean (`git -C <path> status`) and its PR merged: `git worktree remove <path>` and `git branch -D <branch>`; an empty folder left behind is held by a running session and goes once that session closes |
