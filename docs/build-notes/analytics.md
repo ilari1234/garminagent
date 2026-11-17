@@ -144,3 +144,52 @@ Choices made where ADR 0013 left room; they change no milestone or table.
   `warnings` while it is unset, and `analyze` logs a warning every run; neither changes health.
 - **Deleted activities**: the metrics row cascades from `activity`; there is no reconciliation with
   Garmin (ADR 0013, *Owner's decisions on M6b's inputs*).
+
+## M6c as built (2026-11-12)
+
+`daily_load` (migration 0008) holds one row per day and sport group, rebuilt by the `analyze`
+step's fourth part (`garminagent.analytics.daily_load`) from `activity_metrics.load`; the view
+`daily_load_weekly` rolls it up per ISO week. The owner's decisions (ramp, range, groups, missing
+load, reliability, weeks) are in ADR 0013, *Owner's decisions on M6c*. Choices made where the ADR
+left room; they change no milestone or metric definition.
+
+- **Full rebuild, minimal writes.** The series is computed from scratch every run and compared
+  with the stored rows; only differing rows are upserted and rows outside the new series are
+  deleted, all in one transaction. So `daily_load.updated_at` means "last changed", unlike
+  `activity_metrics` (last computed) and the normalized tables (last written). Each day's
+  load is summed with `math.fsum`, which is exactly rounded, so the result doesn't depend on the
+  order Postgres returns activities in (a running sum of three or more loads did, by about 1e-14,
+  which the M6c review caught). Rows are compared with a relative tolerance of 1e-12, so a server
+  that rounds `float8` output (a lowered `extra_float_digits`) can't make every row look changed.
+- **The activity's own day and group** come from `activity` (local start day, else UTC; the
+  current sport key), as in M6b, not from the metrics row, which may be stale until recomputed.
+  An activity whose metrics row is stale but not yet recomputed (over the per-run cap) keeps its
+  stored load until then; only an activity with no metrics row counts as pending.
+- **Each group's series starts on the first activity of any group**, not its own first activity.
+  Before a group's first session its rows are zeros, which is what a zero start gives anyway, and
+  `history_days` and `fitness_reliable` then mean the same in every group.
+- **Groups without any activity get no rows** (no ski rows for an athlete who never skis).
+- **`moving_s`** sums the metrics' moving time; activities without samples add 0 seconds but
+  still count as `sessions`.
+- **The weekly view** is `security_invoker`, so it shows only what the reader may read in
+  `daily_load`; its migration revokes 0001's default privileges on it (they cover views too) and
+  grants SELECT only. Its fitness, fatigue, form, ramp and `fitness_reliable` are the week's last
+  stored day's, so the current week shows the latest values; `days` under 7 marks a partial week.
+- **Counts:** `daily_load_days` (days in the series), `daily_load_rows`, `_inserted`,
+  `_updated`, `_deleted`, `daily_load_reliable_days`, and over the whole series
+  `daily_load_activities_unloaded` and `daily_load_activities_pending`. No value leaves the
+  database.
+- **Hand-computed tests:** a constant load of 100 gives fitness 63.65 after 42 days, fatigue
+  100 × (1 − (6/7)^7) after 7, form 100/42 − 100/7 ≈ −11.90 on day 2 and ramp
+  100 × (41/42 − (41/42)^8) ≈ 15.15 on day 8; ramp is NULL for the first 7 days; fitness is
+  reliable on day 126. Also tested: the series is identical for any input order, and a first run
+  above the 1000-row write batch writes and then leaves every row.
+
+What later work must know:
+
+- **Fitness starts from 0 on the first activity's day.** If an older activity is synced later,
+  the series start moves and every row changes once. On real data the first ~126 days are
+  `fitness_reliable = false`; agents must not read fitness, form or ramp there (M6f's views can
+  filter on it).
+- **Ramp has no limit in phase 2.** A phase 3 safety limit on it needs a documented source
+  (OPEN_QUESTIONS 11).

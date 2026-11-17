@@ -1,10 +1,11 @@
 """The `analyze` step: runs after FIT parsing inside the locked sync run, or alone through
 `garminagent analyze`. Makes no Garmin requests.
 
-It groups activities by sport, rebuilds the derived threshold timeline (M6a) and brings the
-per-activity metrics up to date (M6b). It never fails the sync: each part runs in its own transaction, and an error in
-one becomes an `errors` count and a log line naming the exception class, never its message
-(which may quote data). Counts go to `sync_run.counts["analytics"]`.
+It groups activities by sport, rebuilds the derived threshold timeline (M6a), brings the
+per-activity metrics up to date (M6b) and rebuilds the daily load series from them (M6c). It
+never fails the sync: each part runs in its own transaction, and an error in one becomes an
+`errors` count and a log line naming the exception class, never its message (which may quote
+data). Counts go to `sync_run.counts["analytics"]`.
 """
 
 import logging
@@ -15,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from garminagent.analytics.activity_metrics import update_metrics
+from garminagent.analytics.daily_load import update_daily_load
 from garminagent.analytics.sports import GROUPS, TYPE_KEY, is_mapped, sport_group
 from garminagent.analytics.thresholds import load_rows, rebuild_derived
 from garminagent.config import DEFAULT_ANALYTICS_MAX_ACTIVITIES, Settings
@@ -52,8 +54,8 @@ class AnalyticsResult:
 def analyze(
     sessions: sessionmaker[Session], athlete_id: int, options: AnalyticsOptions | None = None
 ) -> AnalyticsResult:
-    """Run every analytics part, in order (metrics resolve against the rebuilt timeline);
-    never raises."""
+    """Run every analytics part, in order (metrics resolve against the rebuilt timeline, daily
+    load sums the metrics); never raises."""
     options = options or AnalyticsOptions()
     result = AnalyticsResult()
     if options.trimp_b is None:
@@ -62,6 +64,7 @@ def analyze(
         "sport_groups": _sport_groups,
         "thresholds": _thresholds,
         "activity_metrics": _activity_metrics,
+        "daily_load": _daily_load,
     }
     for name, part in parts.items():
         try:
@@ -137,3 +140,17 @@ def _activity_metrics(
         result.add(f"load_{method}", (counts.load_methods or {}).get(method, 0))
     if counts.errors:
         result.add("errors", counts.errors)
+
+
+def _daily_load(
+    sessions: sessionmaker[Session], athlete_id: int, result: AnalyticsResult, options: AnalyticsOptions
+) -> None:
+    counts = update_daily_load(sessions, athlete_id)
+    result.add("daily_load_days", counts.days)
+    result.add("daily_load_rows", counts.rows)
+    result.add("daily_load_inserted", counts.inserted)
+    result.add("daily_load_updated", counts.updated)
+    result.add("daily_load_deleted", counts.deleted)
+    result.add("daily_load_reliable_days", counts.reliable_days)
+    result.add("daily_load_activities_unloaded", counts.activities_unloaded)
+    result.add("daily_load_activities_pending", counts.activities_pending)

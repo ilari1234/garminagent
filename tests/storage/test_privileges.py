@@ -104,8 +104,57 @@ def test_activity_metrics_refuses_free_text_in_code_columns(app_sessions: sessio
         session.execute(text(METRICS_ROW), {"a": athlete_id, "method": "freetext"})
 
 
+NEW_IN_0008 = ("daily_load",)
+VIEWS_IN_0008 = ("daily_load_weekly",)
+DAILY_LOAD_ROW = (
+    "INSERT INTO daily_load (athlete_id, calendar_date, sport_group, algo_version, load, sessions, moving_s,"
+    " activities_unloaded, activities_pending, thresholds_backfilled, fitness, fatigue, form, history_days,"
+    " fitness_reliable) VALUES (:a, '2026-03-01', :group, 1, 0, 0, 0, 0, 0, false, 0, 0, 0, 1, false)"
+)
+
+
+def test_app_role_can_write_the_m6c_table_and_read_the_weekly_view(app_sessions: sessionmaker[Session]) -> None:
+    with app_sessions.begin() as session:
+        athlete_id = ensure_athlete(session)
+        session.execute(text(DAILY_LOAD_ROW), {"a": athlete_id, "group": "all"})
+        session.execute(text("UPDATE daily_load SET load = 50"))
+        assert session.execute(text("SELECT load FROM daily_load_weekly")).scalar_one() == 50
+        session.execute(text("DELETE FROM daily_load"))
+
+
+@pytest.mark.parametrize("table", NEW_IN_0008)
+def test_app_role_cannot_change_the_m6c_table(app_sessions: sessionmaker[Session], table: str) -> None:
+    for statement in (f"TRUNCATE {table}", f"ALTER TABLE {table} ADD COLUMN extra int", f"DROP TABLE {table}"):
+        with app_sessions() as session, pytest.raises(ProgrammingError, match=r"permission denied|must be owner"):
+            session.execute(text(statement))
+
+
+@pytest.mark.parametrize("view", VIEWS_IN_0008)
+def test_the_weekly_view_is_read_only_for_the_app_role(
+    migrated: PgDatabase, owner_engine: Engine, app_sessions: sessionmaker[Session], view: str
+) -> None:
+    """0001's default privileges also cover views; 0008 revokes them so the rollup is SELECT only."""
+    with owner_engine.connect() as conn:
+        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
+            granted = conn.execute(
+                text("SELECT has_table_privilege(:r, :t, :p)"), {"r": migrated.app_role, "t": view, "p": privilege}
+            ).scalar_one()
+            assert granted == (privilege == "SELECT"), f"{privilege} on {view}"
+    for statement in (f"DROP VIEW {view}", f"CREATE OR REPLACE VIEW {view} AS SELECT 1"):
+        with app_sessions() as session, pytest.raises(ProgrammingError, match=r"permission denied|must be owner"):
+            session.execute(text(statement))
+
+
+def test_daily_load_refuses_free_text_in_the_group_column(app_sessions: sessionmaker[Session]) -> None:
+    with app_sessions.begin() as session:
+        athlete_id = ensure_athlete(session)
+    with app_sessions() as session, pytest.raises(IntegrityError, match="ck_daily_load_sport_group"):
+        session.execute(text(DAILY_LOAD_ROW), {"a": athlete_id, "group": "freetext"})
+
+
 @pytest.mark.parametrize(
-    ("revision", "tables", "sequences"), [("0005", NEW_IN_0006, True), ("0006", NEW_IN_0007, False)]
+    ("revision", "tables", "sequences"),
+    [("0005", NEW_IN_0006, True), ("0006", NEW_IN_0007, False), ("0007", NEW_IN_0008, False)],
 )
 def test_new_tables_are_granted_explicitly_without_default_privileges(
     migrated: PgDatabase, owner_engine: Engine, revision: str, tables: tuple[str, ...], sequences: bool
@@ -133,6 +182,10 @@ def test_new_tables_are_granted_explicitly_without_default_privileges(
                     assert conn.execute(
                         text("SELECT has_sequence_privilege(:r, :s, 'USAGE')"), {"r": role, "s": f"{table}_id_seq"}
                     ).scalar_one()
+            for view in VIEWS_IN_0008 if revision == "0007" else ():
+                assert conn.execute(
+                    text("SELECT has_table_privilege(:r, :t, 'SELECT')"), {"r": role, "t": view}
+                ).scalar_one(), f"{role} lacks SELECT on {view}"
     finally:
         with owner_engine.begin() as conn:  # restore what 0001 set, for the other tests
             data = "SELECT, INSERT, UPDATE, DELETE"

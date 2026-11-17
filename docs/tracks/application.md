@@ -1,6 +1,6 @@
 # Track A: application
 
-Entry point for a session working on `src/` and migrations (phase 2 now: M6c–M6f). Read this
+Entry point for a session working on `src/` and migrations (phase 2 now: M6d–M6f). Read this
 instead of every doc; follow the links only for what your milestone touches.
 
 ## Read first
@@ -9,8 +9,8 @@ instead of every doc; follow the links only for what your milestone touches.
    [PROJECT_STATE.md](../../PROJECT_STATE.md) on `origin/main`, or run `/session-start`.
 2. [ADR 0013](../../decisions/0013-analytics-design.md): the metric definitions, milestones and
    the owner's decisions. Read its *Decision* section and your milestone's part.
-3. [docs/build-notes/analytics.md](../build-notes/analytics.md): what M6a and M6b built and the
-   choices they made. Your milestone builds on these.
+3. [docs/build-notes/analytics.md](../build-notes/analytics.md): what M6a, M6b and M6c built
+   and the choices they made. Your milestone builds on these.
 4. [docs/contracts/storage-schema.md](../contracts/storage-schema.md): which tables you may read
    and the invariants new tables must keep.
 5. Open questions your milestone touches in [OPEN_QUESTIONS.md](../../OPEN_QUESTIONS.md)
