@@ -142,8 +142,9 @@ run it again afterwards.
 ## Analytics and thresholds
 
 Every sync ends with the `analyze` step (phase 2, ADR 0013); `garminagent analyze` runs it alone.
-It groups activities by sport, rebuilds the threshold timeline and brings the per-activity metrics
-(`activity_metrics`, M6b) up to date. It never fails a sync:
+It groups activities by sport, rebuilds the threshold timeline, brings the per-activity metrics
+(`activity_metrics`, M6b) up to date and rebuilds fitness, fatigue, form and ramp per day
+(`daily_load`, M6c; weekly in the view `daily_load_weekly`). It never fails a sync:
 its counts are in `sync_run.counts["analytics"]`, and a failure shows as `"errors"` there and as a
 log line naming the exception class. `analyze` prints `unmapped_sport_keys`: Garmin activity types
 not yet in a sport group (they count as `other`; add them in `garminagent/analytics/sports.py`).
@@ -156,6 +157,12 @@ run, newest first. After the upgrade to M6b the first syncs catch up over a few 
 ```bash
 docker compose run --rm app analyze --full
 ```
+
+Daily load is rebuilt in full every run, from the first activity to the latest day with data,
+and only changed rows are written. Activities still waiting for metrics add no load until they
+are computed: `daily_load_activities_pending` counts them, `daily_load_activities_unloaded`
+counts those that have no load at all, and `daily_load_reliable_days` counts days with at least
+126 days of history behind them.
 
 HR load needs `ANALYTICS_TRIMP_B` in `.env`: `1.92` or `1.67`, Banister's published coefficients
 for men and for women. It has no default; while it is unset, activities without power get no load,

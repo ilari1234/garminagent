@@ -343,9 +343,10 @@ def analyze(
     ),
 ) -> None:
     """Run the analytics on stored data, as every sync does after FIT parsing: sport groups, the
-    threshold timeline and per-activity metrics. Metrics are recomputed only where their inputs
-    changed, at most ANALYTICS_MAX_ACTIVITIES per run unless --full. Makes no Garmin requests.
-    Prints counts, plus Garmin sport keys not yet grouped. Exit code 1 if a part failed."""
+    threshold timeline, per-activity metrics and the daily load series (fitness, fatigue, form,
+    ramp). Metrics are recomputed only where their inputs changed, at most
+    ANALYTICS_MAX_ACTIVITIES per run unless --full. Makes no Garmin requests. Prints counts,
+    plus Garmin sport keys not yet grouped. Exit code 1 if a part failed."""
     options = AnalyticsOptions.from_settings(get_settings(), full=full)
     with _athlete_sessions("analyze", locked=True) as (sessions, athlete_id):
         result = run_analyze(sessions, athlete_id, options)

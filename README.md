@@ -42,7 +42,7 @@ uv run garminagent status     # sync health; --max-age-hours N for health checks
 uv run garminagent sync --since 2019-01-01  # extend history backwards
 uv run garminagent parse-fit  # (re)parse downloaded FIT files; no Garmin requests
 uv run garminagent renormalize activities  # re-parse stored responses after an upgrade; no Garmin requests
-uv run garminagent analyze    # sport groups, thresholds and per-activity metrics; --full lifts the cap
+uv run garminagent analyze    # sport groups, thresholds, per-activity metrics, daily load; --full lifts the cap
 uv run garminagent thresholds list --at 2026-11-01 --sport run  # thresholds in effect, with sources
 uv run garminagent thresholds set ftp 250 --sport ride  # a manual value outranks Garmin's
 uv run garminagent purge-data --yes  # delete ALL stored data (rows and files)

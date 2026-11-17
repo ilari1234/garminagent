@@ -9,7 +9,7 @@ from garminagent.analytics.thresholds import set_manual
 from garminagent.garmin.files import parse_activity_file
 from garminagent.normalize import DailySummaryRecord, HrZonesRecord, parse_activities, parse_daily_summaries
 from garminagent.storage.blobs import LocalBlobStore
-from garminagent.storage.models import Activity, ActivityFile, Athlete, DailySummary, RawPayload, SyncCursor
+from garminagent.storage.models import Activity, ActivityFile, Athlete, Base, DailySummary, RawPayload, SyncCursor
 from garminagent.storage.repository import (
     SyncRange,
     ensure_athlete,
@@ -163,7 +163,11 @@ def test_purge_removes_all_rows_and_blobs(app_sessions: sessionmaker[Session], b
         "sync_run": 0,
         "athlete_zones": 1,
         "athlete_threshold": 1,
+        "activity_metrics": 0,
+        "daily_load": 0,
     }
+    # Every athlete table is counted, so a new one can't be purged silently (by cascade) uncounted.
+    assert set(result.rows) == set(Base.metadata.tables) - {"athlete"}
     assert result.blobs == 2
     with app_sessions() as session:
         for model in (Athlete, RawPayload, ActivityFile, SyncCursor, Activity, DailySummary):
