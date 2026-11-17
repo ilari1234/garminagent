@@ -146,6 +146,18 @@ the `repr` of `Settings` and `AnalyticsOptions`, although no code path printed e
 accepted as designed ([analytics build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)): a database reader could test both coefficients
 against a row's fingerprint, but the same reader can derive it from HR load and the samples.
 
+### M6c analytics review (2026-11-12)
+
+`/security-review` on the M6c change: no findings at the reporting bar. It checked migration 0008's
+role interpolation (validated with `ROLE_NAME`, constant relation names); its grants (DML on
+`daily_load` only; on the view `daily_load_weekly`, 0001's default privileges, which also cover
+views, are revoked and SELECT alone is granted, tested in `tests/storage/test_privileges.py`); that
+the view is `security_invoker`, so it never shows more than the reader's grants on `daily_load`;
+bound parameters in every new query, each scoped by `athlete_id`; CHECK constraint on the only code
+column; and that `analyze` output and `sync_run.counts` carry counts only (no load, fitness,
+fatigue, form or ramp). The threat model is unchanged: `daily_load` is derived from
+`activity_metrics.load` and adds no new kind of data.
+
 ### B3b app code review (2026-11-07)
 
 `/security-review` on the B3b change: no findings at the reporting bar. It checked `db-bootstrap`'s

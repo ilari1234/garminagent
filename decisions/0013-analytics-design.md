@@ -2,10 +2,11 @@
 
 **Status:** Accepted (owner's decision, 2026-11-03). The phase 2 planning session produced this on
 2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
-the owner's answers are recorded below. M6a (2026-11-07) and M6b (2026-11-09) are built;
-what was built, choices made where this ADR left room, and the real-data findings are in
+the owner's answers are recorded below. M6a (2026-11-07), M6b (2026-11-09) and M6c (2026-11-12)
+are built; what was built, choices made where this ADR left room, and the real-data findings are in
 [docs/build-notes/analytics.md](../docs/build-notes/analytics.md) (ADR 0017). The owner's answers
-on M6b's threshold inputs are under *Owner's decisions on M6b's inputs*. M6c–M6f are not built yet.
+on M6b's threshold inputs are under *Owner's decisions on M6b's inputs*, and on M6c's series under
+*Owner's decisions on M6c*. M6d–M6f are not built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -139,6 +140,31 @@ former OPEN_QUESTIONS 36 and 39.
   changes (phase 1 review L10).
 - **`ANALYTICS_TRIMP_B` is set** in the owner's `.env` (2026-11-07). Its value stays out of the
   repository, as decided on 2026-11-03.
+
+## Owner's decisions on M6c (2026-11-12)
+
+Points the table above named but didn't define, answered before M6c was built.
+
+- **Ramp is the 7-day change in fitness:** `ramp_t = CTL_t − CTL_{t−7}`, per day and sport group,
+  NULL for the first 7 days of the series. It's how TrainingPeaks and most coaching sources use
+  the term (their guidance quotes 4–8 points a week), and it follows from the fitness formula:
+  a week's ramp is about `(week's load − 7 × CTL) / 42`. No limit is applied in phase 2; a limit
+  belongs to phase 3 and needs a documented source (OPEN_QUESTIONS 11). The week-over-week change
+  in weekly load stays derivable from the weekly view if a phase 3 limit needs it. Sources
+  (checked 2026-11-12): TrainingPeaks,
+  [Why ramp rate is an important training metric](https://www.trainingpeaks.com/learn/articles/why-ramp-rate-is-an-important-training-metric/)
+  and [Understanding ramp rate](https://www.trainingpeaks.com/blog/understanding-trainingpeaks-ramp-rate-for-better-coaching/).
+- **The series covers every day** from the first activity's day to the latest day with data (the
+  later of the last activity and the last daily summary); rest days have load 0. No timezone
+  setting decides what "today" is.
+- **`all` holds the total; each sport group with an activity gets its own fitness, fatigue, form
+  and ramp** over the same range, so a jump in one sport stays visible under a flat total.
+- **Missing load adds 0 and is counted per day:** activities whose metrics have no load
+  (`activities_unloaded`) and activities without metrics yet (`activities_pending`).
+- **Reliability is recorded per row:** `history_days`, and `fitness_reliable` from 126 days
+  (3 × 42), plus `thresholds_backfilled` when any load counted that day used backward-filled values.
+- **The weekly view uses ISO weeks** (Monday start): summed load, sessions and moving time, and
+  fitness, fatigue, form and ramp as of the week's last day.
 
 ## Alternatives considered
 

@@ -441,6 +441,38 @@ class ActivityMetrics(Base):
     )
 
 
+class DailyLoad(Base):
+    """Fitness, fatigue, form and ramp per day and sport group (ADR 0013, M6c), rebuilt by every
+    `analyze` from `activity_metrics.load`; `all` is the total. Every day from the first activity
+    to the latest day with data has a row, rest days with load 0. Definitions and what counts as
+    missing load are in `garminagent.analytics.daily_load`. The weekly rollup is the view
+    `daily_load_weekly` (migration 0008), not mapped here."""
+
+    __tablename__ = "daily_load"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    calendar_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    sport_group: Mapped[str] = mapped_column(String(16), primary_key=True)
+    algo_version: Mapped[int] = mapped_column(SmallInteger)
+    load: Mapped[float] = mapped_column(Float)
+    sessions: Mapped[int] = mapped_column(Integer)
+    moving_s: Mapped[int] = mapped_column(Integer)
+    activities_unloaded: Mapped[int] = mapped_column(Integer)  # metrics row without load
+    activities_pending: Mapped[int] = mapped_column(Integer)  # no metrics row yet
+    thresholds_backfilled: Mapped[bool] = mapped_column(Boolean)
+    fitness: Mapped[float] = mapped_column(Float)
+    fatigue: Mapped[float] = mapped_column(Float)
+    form: Mapped[float] = mapped_column(Float)  # previous day's fitness - fatigue
+    ramp: Mapped[float | None] = mapped_column(Float, nullable=True)  # 7-day fitness change
+    history_days: Mapped[int] = mapped_column(Integer)
+    fitness_reliable: Mapped[bool] = mapped_column(Boolean)  # history_days >= 126
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+    __table_args__ = (
+        CheckConstraint("sport_group IN ('all', 'run', 'ride', 'ski', 'strength', 'other')", name="sport_group"),
+    )
+
+
 class SyncRun(Base):
     """One sync run: when, how it ended and what it stored. Counts only, never data values."""
 

@@ -1,6 +1,6 @@
 # Storage schema contract
 
-Implemented, migrations 0001–0007. **`src/garminagent/storage/models.py` is authoritative** for
+Implemented, migrations 0001–0008. **`src/garminagent/storage/models.py` is authoritative** for
 columns and types; this file says what they mean and who may rely on what. Reasoning: ADR 0003.
 
 ## Layers and who may read them
@@ -10,7 +10,7 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 | Raw | `raw_payload`, `activity_file`, blobs | `normalize`, `fit` and `renormalize` only, plus `purge-data` | Sync |
 | Operational | `athlete`, `sync_cursor`, `sync_run` | Sync, `status` | Sync, runner |
 | Normalized | `activity`, `daily_summary`, `activity_sample`, `activity_lap`, `sleep_summary`, `hrv_summary`, `weight_daily`, `athlete_zones` | Analytics | Sync, FIT parser, `renormalize` |
-| Derived | `athlete_threshold` (M6a), `activity_metrics` (M6b); more follow in M6c–M6e (ADR 0013) | Analytics; agent layer through views (M6f) | Analytics; `manual` thresholds by `garminagent thresholds` |
+| Derived | `athlete_threshold` (M6a), `activity_metrics` (M6b), `daily_load` and the view `daily_load_weekly` (M6c); more follow in M6d–M6e (ADR 0013) | Analytics; agent layer through views (M6f) | Analytics; `manual` thresholds by `garminagent thresholds` |
 
 **Agents read none of these directly** ([agent layer](agent-layer.md)).
 
@@ -23,18 +23,25 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 3. **Normalized rows are replaceable.** Anything can be rebuilt from raw. Nothing unique to the owner
    lives here. Derived tables should keep this property, apart from manual inputs such as thresholds.
 4. **Upserts always set `updated_at`**, even when values are unchanged, so it means "last written", not
-   "last changed". Recent days and activities are rewritten on every run.
+   "last changed". Recent days and activities are rewritten on every run. Two derived tables
+   differ: in `activity_metrics` it means "last computed" (fingerprint changed), in `daily_load`
+   "last changed" (only differing rows are written).
 5. **`raw_payload_id` is optional and `SET NULL`** on delete; provenance, not a dependency.
 6. **Missing means NULL.** Values out of plausible range become NULL at parsing, in every dataset
    (activities and daily summaries since ADR 0015; older rows keep their values until re-normalized).
    Almost all measures are nullable, so consumers must handle NULL.
 7. **Roles:** the app role has DML only. A new table's migration must grant it explicitly (from 0006;
    0002–0005 relied on 0001's default privileges), and test it in `tests/storage/test_privileges.py`.
+   A view gets SELECT only: 0001's default privileges also cover views, so its migration revokes
+   them first (0008). Rollup views in `public` (`daily_load_weekly`) are `security_invoker`, so
+   they never show more than the reader's own grants on the tables beneath; they are for roles
+   that already read those tables. The `agent` schema's views and their privileges are M6f's to
+   decide (the agent role reads no `public` table, [agent layer](agent-layer.md)).
    Roles come from `docker/postgres/init` locally and from `db-bootstrap` on RDS, where the owner is
    not a superuser: it holds CONNECT and `USAGE, CREATE ON SCHEMA public WITH GRANT OPTION`, nothing
    more. Migrations must work with exactly that (no extensions, no `ALTER` of objects the owner
    didn't create); `tests/storage/test_bootstrap.py` runs them all that way.
-8. **Migrations are linear, numbered and run as the owner.** Next: 0008. Only track A adds them.
+8. **Migrations are linear, numbered and run as the owner.** Next: 0009. Only track A adds them.
 
 ## Tables
 
@@ -54,6 +61,8 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 | `athlete_zones` | `id`; unique `(athlete_id, sport, valid_from)` | Garmin's HR zone settings per zone sport (`DEFAULT`, `RUNNING`, `CYCLING`, `SWIMMING`, `ROWING`): training method code, five zone floors, max, resting and LT HR used. A row from the day a change was first fetched; holds until the next row for that sport |
 | `athlete_threshold` | `id`; unique `(athlete_id, value_type, sport, source, valid_from)` | The threshold timeline: `value_type` (`ftp`, `lthr`, `max_hr`, `resting_hr`, `threshold_speed`), `sport` (`all` or a sport group), `source` (`manual`, `garmin_zones`, `activity`), `valid_from`, `value` in bpm, W or m/s. `manual` rows are the owner's; the others are rebuilt by `analyze` |
 | `activity_metrics` | `(athlete_id, activity_id)`, FK to `activity`, cascade; index `(athlete_id, activity_date)` | One row per activity (M6b): `activity_date` (local start day, else UTC), `sport_group`, `moving_s` (NULL: no samples), HR, power and speed coverage (fractions of moving time), weighted power, intensity, power load, HR load, the chosen `load` with `load_method` (`power`, `hr`, `none`), seconds in HR zones 0–5 (0 is below zone 1) and power levels 1–7, the 3-zone split, efficiency factor with `ef_basis`, decoupling, the thresholds used (FTP, LTHR, max and resting HR, resting HR's source, zone floors' sport and date), `thresholds_backfilled`, `algo_version`, `input_fingerprint`. Written by `analyze` only |
+| `daily_load` | `(athlete_id, calendar_date, sport_group)` | One row per day and group (M6c): `sport_group` is `all` (the total) or a sport group that has an activity, every day from the first activity to the latest day with data. Summed `load`, `sessions`, `moving_s`, `activities_unloaded` (metrics row without load) and `activities_pending` (no metrics row yet), `thresholds_backfilled`, `fitness` (42-day), `fatigue` (7-day), `form` (previous day's fitness − fatigue), `ramp` (fitness change over 7 days, NULL for the first 7), `history_days`, `fitness_reliable` (126 days or more), `algo_version`. Written by `analyze` only |
+| `daily_load_weekly` (view) | — | `daily_load` per ISO week (Monday start) and group: `days` (under 7 is a partial week), summed load, sessions, moving time and missing-load counts, `thresholds_backfilled` if any day had it, and fitness, fatigue, form, ramp and `fitness_reliable` as of the week's last stored day |
 | `weight_daily` | `(athlete_id, calendar_date)` | Latest weigh-in in kg (Garmin sends grams despite the spec; converted, confirmed on real data 2026-11-03), BMI, body fat, entries. Sensitive: opt-in before reaching a model |
 
 ## Semantics consumers get wrong
@@ -75,6 +84,11 @@ columns and types; this file says what they mean and who may rely on what. Reaso
   computable" (no samples, coverage under 50 %, no threshold, `ANALYTICS_TRIMP_B` unset), never 0.
   `load` is NULL when `load_method` is `none`; rows with `thresholds_backfilled` used values from
   later dates and are approximate. Decoupling isn't limited to steady sessions (ADR 0013).
+- **`daily_load` rows are rebuilt every run but written only when they change**, so its
+  `updated_at` means "last changed". Load 0 doesn't always mean rest: check `activities_unloaded`
+  and `activities_pending`. Fitness starts from 0 on the first activity's day, so before
+  `fitness_reliable` fitness is too low, form too high and ramp too large; a new first activity
+  (an older one synced) shifts the whole series.
 - **`athlete_zones.valid_from` is when we first saw a change**, not when it was made in Garmin, and
   history starts with the first fetch (M6a). Earlier dates fall back to activity values.
 - **`garmin_tss` and `garmin_if` are Garmin's numbers** for cross-checks only; our loads use neutral
