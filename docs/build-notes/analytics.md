@@ -193,3 +193,17 @@ What later work must know:
   filter on it).
 - **Ramp has no limit in phase 2.** A phase 3 safety limit on it needs a documented source
   (OPEN_QUESTIONS 11).
+
+## Real-data check for M6c (2026-11-17)
+
+The owner ran `analyze` on the real database after migration 0008, with the series already
+written by an earlier run. Counts only:
+
+- **751 days, 4506 rows:** 751 × 6, so `all` plus all five sport groups have activities,
+  including `other` (Garmin sport keys not yet grouped; `analyze` lists them under
+  `unmapped_sport_keys`).
+- **626 reliable days:** 751 − 125, as `fitness_reliable` from day 126 implies.
+- **0 inserted, 0 updated, 0 deleted** on the rerun: the full rebuild left every stored row as it
+  was, including days with several activities, which confirms the review's M1 fix on real data.
+- **0 pending, 3 unloaded:** every activity has metrics; three have no load (no samples, or HR on
+  under half the session) and add 0 to their days, consistent with M6b's `load_none`.
