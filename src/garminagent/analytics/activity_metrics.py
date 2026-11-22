@@ -156,7 +156,7 @@ def update_metrics(
 ) -> MetricsCounts:
     counts = MetricsCounts()
     with sessions() as session:
-        activities = _activity_inputs(session, athlete_id)
+        activities = activity_inputs(session, athlete_id)
         timeline = load_timeline(session, athlete_id)
         zones = load_zone_history(session, athlete_id)
         stored = {
@@ -213,7 +213,9 @@ def update_metrics(
     return counts
 
 
-def _activity_inputs(session: Session, athlete_id: int) -> list[ActivityInput]:
+def activity_inputs(session: Session, athlete_id: int) -> list[ActivityInput]:
+    """Every activity of the athlete, newest first, with its day, sport group and FIT files;
+    best efforts (M6d) use the same inputs."""
     files: dict[int, list[tuple[str, str | None, int | None]]] = defaultdict(list)
     for r in session.execute(
         select(

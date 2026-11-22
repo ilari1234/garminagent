@@ -144,7 +144,9 @@ run it again afterwards.
 Every sync ends with the `analyze` step (phase 2, ADR 0013); `garminagent analyze` runs it alone.
 It groups activities by sport, rebuilds the threshold timeline, brings the per-activity metrics
 (`activity_metrics`, M6b) up to date and rebuilds fitness, fatigue, form and ramp per day
-(`daily_load`, M6c; weekly in the view `daily_load_weekly`). It never fails a sync:
+(`daily_load`, M6c; weekly in the view `daily_load_weekly`), and brings each activity's best
+efforts up to date (`activity_best_effort`, M6d; curves and PBs in the views `best_effort_curve`
+and `best_effort_pb`). It never fails a sync:
 its counts are in `sync_run.counts["analytics"]`, and a failure shows as `"errors"` there and as a
 log line naming the exception class. `analyze` prints `unmapped_sport_keys`: Garmin activity types
 not yet in a sport group (they count as `other`; add them in `garminagent/analytics/sports.py`).
@@ -163,6 +165,12 @@ and only changed rows are written. Activities still waiting for metrics add no l
 are computed: `daily_load_activities_pending` counts them, `daily_load_activities_unloaded`
 counts those that have no load at all, and `daily_load_reliable_days` counts days with at least
 126 days of history behind them.
+
+Best efforts follow the same rule as the metrics: recomputed only when an activity's FIT file,
+day, sport or the algorithm changes, at most `ANALYTICS_MAX_ACTIVITIES` per run
+(`best_effort_pending` counts what is left; `analyze --full` does it at once). After the upgrade
+to M6d every activity is pending once. `best_effort_spikes` and `best_effort_counter_drops` count
+GPS jumps and distance resets that broke a track in this run.
 
 HR load needs `ANALYTICS_TRIMP_B` in `.env`: `1.92` or `1.67`, Banister's published coefficients
 for men and for women. It has no default; while it is unset, activities without power get no load,

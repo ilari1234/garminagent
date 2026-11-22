@@ -158,6 +158,27 @@ column; and that `analyze` output and `sync_run.counts` carry counts only (no lo
 fatigue, form or ramp). The threat model is unchanged: `daily_load` is derived from
 `activity_metrics.load` and adds no new kind of data.
 
+### M6d analytics review (2026-11-22)
+
+`/security-review` on the M6d change: no findings at the reporting bar. It checked migration 0009's
+role interpolation (validated with `ROLE_NAME`, constant relation names; the view SQL interpolates
+module constants only); its grants (DML on `activity_best_effort` only; on the views
+`best_effort_curve` and `best_effort_pb`, 0001's default privileges are revoked and SELECT alone is
+granted, tested in `tests/storage/test_privileges.py`); that both views are `security_invoker`;
+bound parameters in every new query, each one in `garminagent` scoped by `athlete_id` (the
+single-user real-data check reads the whole database, as before); CHECK constraints on the code
+columns (`kind`, `sport_group`) and on which value column a kind may fill; the purge covering the
+new table; and that `analyze` output, `sync_run.counts`, the one new log line (exception class
+only) and the real-data check's `best_efforts` section carry counts only (no times, power, dates
+or IDs; tested). The threat model is unchanged: best efforts are derived from samples already
+stored and add no new kind of data. The views carry activity IDs for the owner's own lookups;
+M6f's agent views must leave them out (docs/plan.md, data handling).
+
+Checklist: no new secret; no new personal data beyond derived values from stored samples; inputs
+are the normalized samples, already range-checked, with NULL, gaps, counter drops and spikes
+handled and tested; no new dependency, action or image; `/security-review` run; threat model
+unchanged.
+
 ### B3b app code review (2026-11-07)
 
 `/security-review` on the B3b change: no findings at the reporting bar. It checked `db-bootstrap`'s

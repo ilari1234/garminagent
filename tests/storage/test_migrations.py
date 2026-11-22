@@ -13,7 +13,7 @@ def test_migrations_match_models(migrated: PgDatabase) -> None:
     migrate.check(migrated.owner_url, migrated.app_role)  # raises on any drift
 
 
-DERIVED_VIEWS = ("daily_load_weekly",)
+DERIVED_VIEWS = ("daily_load_weekly", "best_effort_curve", "best_effort_pb")
 
 
 def test_every_view_belongs_to_a_layer_and_has_no_location_or_free_text_columns(

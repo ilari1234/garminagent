@@ -2,10 +2,10 @@
 `garminagent analyze`. Makes no Garmin requests.
 
 It groups activities by sport, rebuilds the derived threshold timeline (M6a), brings the
-per-activity metrics up to date (M6b) and rebuilds the daily load series from them (M6c). It
-never fails the sync: each part runs in its own transaction, and an error in one becomes an
-`errors` count and a log line naming the exception class, never its message (which may quote
-data). Counts go to `sync_run.counts["analytics"]`.
+per-activity metrics up to date (M6b), rebuilds the daily load series from them (M6c) and
+brings the per-activity best efforts up to date (M6d). It never fails the sync: each part
+runs in its own transaction, and an error in one becomes an `errors` count and a log line
+naming the exception class, never its message (which may quote data). Counts go to `sync_run.counts["analytics"]`.
 """
 
 import logging
@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.analytics.activity_best_efforts import update_best_efforts
 from garminagent.analytics.activity_metrics import update_metrics
 from garminagent.analytics.daily_load import update_daily_load
 from garminagent.analytics.sports import GROUPS, TYPE_KEY, is_mapped, sport_group
@@ -65,6 +66,7 @@ def analyze(
         "thresholds": _thresholds,
         "activity_metrics": _activity_metrics,
         "daily_load": _daily_load,
+        "best_efforts": _best_efforts,
     }
     for name, part in parts.items():
         try:
@@ -154,3 +156,18 @@ def _daily_load(
     result.add("daily_load_reliable_days", counts.reliable_days)
     result.add("daily_load_activities_unloaded", counts.activities_unloaded)
     result.add("daily_load_activities_pending", counts.activities_pending)
+
+
+def _best_efforts(
+    sessions: sessionmaker[Session], athlete_id: int, result: AnalyticsResult, options: AnalyticsOptions
+) -> None:
+    counts = update_best_efforts(sessions, athlete_id, options.max_activities)
+    result.add("best_effort_computed", counts.computed)
+    result.add("best_effort_current", counts.current)
+    result.add("best_effort_pending", counts.pending)
+    result.add("best_effort_with_distance", counts.with_distance)
+    result.add("best_effort_with_power", counts.with_power)
+    result.add("best_effort_spikes", counts.spikes)
+    result.add("best_effort_counter_drops", counts.counter_drops)
+    if counts.errors:
+        result.add("errors", counts.errors)

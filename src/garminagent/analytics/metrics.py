@@ -43,6 +43,7 @@ class Point:
     heart_rate: int | None
     power_w: int | None
     speed_mps: float | None
+    distance_m: float | None = None  # best efforts only (M6d)
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,7 @@ def weighted_power(segments: Sequence[Segment]) -> float | None:
     Windows cross neither pauses nor seconds without power."""
     total = 0.0
     windows = 0
-    for run in _runs(segments, lambda s: s.power_w):
+    for run in channel_runs(segments, lambda s: s.power_w):
         if len(run) < WP_WINDOW_S:
             continue
         rolling = float(sum(run[:WP_WINDOW_S]))
@@ -88,7 +89,7 @@ def weighted_power(segments: Sequence[Segment]) -> float | None:
     return (total / windows) ** 0.25 if windows else None
 
 
-def _runs(segments: Sequence[Segment], value: Callable[[Second], float | None]) -> list[list[float]]:
+def channel_runs(segments: Sequence[Segment], value: Callable[[Second], float | None]) -> list[list[float]]:
     """Maximal runs of seconds that have the value, within segments."""
     runs: list[list[float]] = []
     for segment in segments:

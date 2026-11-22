@@ -207,3 +207,64 @@ written by an earlier run. Counts only:
   was, including days with several activities, which confirms the review's M1 fix on real data.
 - **0 pending, 3 unloaded:** every activity has metrics; three have no load (no samples, or HR on
   under half the session) and add 0 to their days, consistent with M6b's `load_none`.
+
+## M6d as built (2026-11-22)
+
+`activity_best_effort` (migration 0009) holds one row per activity, kind (`distance`, `power`)
+and span (metres or seconds), written by the `analyze` step's fifth part
+(`garminagent.analytics.activity_best_efforts`, rules in `analytics/best_efforts.py`). The views
+`best_effort_curve` and `best_effort_pb` read it. The owner's decisions (pauses, the spans,
+`distance_m`, spike limits, the views) are in ADR 0013, *Owner's decisions on M6d*. Choices made
+where the ADR left room; they change no milestone or metric definition.
+
+- **Every span the group is looked for has a row**, with `seconds` or `power_w` NULL when the
+  activity doesn't reach it (or has no samples). So every activity has rows (every group has
+  power windows), the stored fingerprint tells whether an activity is current without a second
+  table, and a NULL reads as "looked for, not reached". The views skip NULL rows.
+- **Spans are whole metres**: the half marathon is stored as 21098, the mile as 1609; the
+  arithmetic uses the exact distances.
+- **The shortest time is exact, not sampled.** Distance against time is piecewise linear within a
+  piece, so the minimum lies where the effort starts or ends on a sample; both are tried for
+  every sample, with binary search for the other end. A brute-force test checks it on random
+  uneven tracks.
+- **Distance pieces need two samples with distance.** A sample without `distance_m` breaks the
+  track (never filled), as do pauses, counter drops and spikes. Time standing still while the
+  watch recorded counts, as in M6b's moving time.
+- **Power windows** reuse M6b's 1 s expansion and its runs of seconds with power
+  (`metrics.channel_runs`, formerly private), so a window crosses neither a pause nor a second
+  without power; there's no coverage gate, since a window is whole or absent. Runs get power
+  windows too (only running *load* is HR-only).
+- **The fingerprint** is SHA-256 over the activity's day and sport group, its FIT files (content
+  hash, parse status, parser version) and its own `algo_version` (`BEST_EFFORT_ALGO_VERSION`).
+  Thresholds aren't inputs, so a threshold change recomputes metrics but not best efforts. An
+  activity's rows are deleted and inserted together, since a new sport group changes its spans.
+- **Cap**: the same `ANALYTICS_MAX_ACTIVITIES` as the metrics, applied separately, newest first,
+  in transactions of 25; `analyze --full` has no cap. After the upgrade, every activity is
+  pending once.
+- **Ties** go to the earlier date, then the lower activity ID. The PB view's previous best is the
+  best set on an earlier day, so a second effort on the PB's own day isn't a previous best.
+- **The curve's periods** count back from `CURRENT_DATE` when the view is read, in the session's
+  time zone: `period_days` 42 covers today and the 41 days before; NULL is all time.
+- **Counts:** `best_effort_computed`, `_current`, `_pending`, and for this run's computed
+  activities `best_effort_with_distance`, `_with_power`, `_spikes` and `_counter_drops`. No value
+  leaves the database. `scripts/real_data_check.py` adds a `best_efforts` section: rows and
+  reached spans per group, runs and rides with distance samples but no distance effort, and
+  implausible efforts (runs faster than 6.5 m/s, rides faster than 16.7 m/s, 5 s power over
+  2000 W), which should be 0.
+
+What later work must know:
+
+- **A best effort is only as good as the watch's distance.** Spikes faster than the limits are
+  caught; GPS cutting corners or drifting slowly is not, and can't be from the samples alone.
+  Indoor and treadmill sessions use the watch's estimated distance.
+- **Periods depend on the reader's time zone** near midnight; M6f's typed queries should pass
+  the date explicitly if that matters.
+- **Short power windows on smart-recorded files are held, not measured.** The gap rule carries a
+  sample forward up to 10 s, so one high sample before a gap fills a whole 5 s window. M6f
+  shouldn't present 5 s and 15 s power from such files as precise (M6d review, L2).
+- **After a `BEST_EFFORT_ALGO_VERSION` bump the views mix versions** until every activity is
+  recomputed (`best_effort_pending` > 0): run `analyze --full` after a bump, or have M6f's agent
+  views filter on the current version (M6d review, L4).
+- **Any decrease in `distance_m` is a counter drop**, even a centimetre. If the owner's
+  real-data run shows many `best_effort_counter_drops`, a small tolerance is the fix (M6d
+  review, L1).

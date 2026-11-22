@@ -473,6 +473,46 @@ class DailyLoad(Base):
     )
 
 
+class ActivityBestEffort(Base):
+    """Best efforts per activity (ADR 0013, M6d), computed by `analyze` from samples: the
+    shortest time over each distance for runs and rides, and the highest mean power over each
+    window for every group. Every distance and window the group is looked for has a row, with
+    no value when the activity doesn't reach it. Rules (pauses, counter drops, GPS spikes) are
+    in `garminagent.analytics.best_efforts`. Recomputed only when `input_fingerprint` changes
+    (activity day and group, FIT files and parser version, `algo_version`). The curve and PBs
+    are the views `best_effort_curve` and `best_effort_pb` (migration 0009), not mapped here."""
+
+    __tablename__ = "activity_best_effort"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8), primary_key=True)  # distance, power
+    span: Mapped[int] = mapped_column(Integer, primary_key=True)  # metres or seconds, by kind
+    activity_date: Mapped[date] = mapped_column(Date)  # local start day, else UTC
+    sport_group: Mapped[str] = mapped_column(String(16))
+    seconds: Mapped[float | None] = mapped_column(Float, nullable=True)  # distance: shortest time
+    power_w: Mapped[float | None] = mapped_column(Float, nullable=True)  # power: highest mean
+    algo_version: Mapped[int] = mapped_column(SmallInteger)
+    input_fingerprint: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["athlete_id", "activity_id"],
+            ["activity.athlete_id", "activity.activity_id"],
+            name="fk_activity_best_effort_activity",
+            ondelete="CASCADE",
+        ),
+        Index("ix_activity_best_effort_curve", "athlete_id", "sport_group", "kind", "span"),
+        CheckConstraint("sport_group IN ('run', 'ride', 'ski', 'strength', 'other')", name="sport_group"),
+        CheckConstraint("kind IN ('distance', 'power')", name="kind"),
+        CheckConstraint("span > 0", name="span"),
+        CheckConstraint(
+            "(kind = 'distance' AND power_w IS NULL) OR (kind = 'power' AND seconds IS NULL)", name="value"
+        ),
+    )
+
+
 class SyncRun(Base):
     """One sync run: when, how it ended and what it stored. Counts only, never data values."""
 

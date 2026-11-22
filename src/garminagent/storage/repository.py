@@ -30,6 +30,7 @@ from garminagent.normalize import (
 from garminagent.storage.blobs import BlobStore
 from garminagent.storage.models import (
     Activity,
+    ActivityBestEffort,
     ActivityFile,
     ActivityLap,
     ActivityMetrics,
@@ -429,6 +430,7 @@ def purge_athlete(sessions: sessionmaker[Session], blobs: BlobStore, athlete_id:
         AthleteThreshold,
         ActivityMetrics,
         DailyLoad,
+        ActivityBestEffort,
     ]
     with sessions.begin() as session:
         rows = {
