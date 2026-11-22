@@ -7,6 +7,7 @@ from typing import Any, Protocol, cast
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
+from garminagent.analytics import AnalyticsOptions, analyze
 from garminagent.analytics.thresholds import rebuild_derived, set_manual
 from garminagent.fit import Lap, ParsedFit, Sample
 from garminagent.normalize import parse_activities, parse_hr_zones, parse_weight
@@ -23,6 +24,7 @@ from garminagent.storage.repository import (
 )
 from garminagent.sync import ACTIVITIES, HR_ZONES, HR_ZONES_REQUEST_KEY
 from tests.garmin.fakes import load_fixture
+from tests.storage.test_best_efforts import add_activity
 
 pytestmark = pytest.mark.integration
 
@@ -332,3 +334,37 @@ def test_threshold_coverage_on_an_empty_database(app_sessions: sessionmaker[Sess
         "history_per_sport": {},
     }
     assert report["timeline_rows"] == {}
+
+
+def test_report_best_effort_coverage_and_implausible_counts(app_sessions: sessionmaker[Session]) -> None:
+    day = TODAY - timedelta(days=3)
+    athlete = add_activity(app_sessions, 1, day, seconds=300, speed=3.7, power=217)  # 1110 m
+    add_activity(app_sessions, 2, day, seconds=60, speed=3.7)  # 222 m: below every distance
+    add_activity(app_sessions, 3, day, seconds=200, speed=7.3)  # implausibly fast 400 m and 1 km
+    add_activity(app_sessions, 4, day, "cycling", seconds=60, speed=None, power=2345)
+    analyze(app_sessions, athlete, AnalyticsOptions(max_activities=None))
+
+    with app_sessions() as session:
+        report = _load_script().collect(session, TODAY)["best_efforts"]
+
+    assert report["activities"] == 4
+    assert report["rows_per_group"]["run"]["distance_400"] == {"activities": 3, "reached": 2}
+    assert report["rows_per_group"]["run"]["distance_1000"] == {"activities": 3, "reached": 2}
+    assert report["rows_per_group"]["run"]["power_60"] == {"activities": 3, "reached": 1}
+    assert report["rows_per_group"]["ride"]["distance_10000"] == {"activities": 1, "reached": 0}
+    assert report["with_distance_samples_but_no_distance_effort"] == {"run": 1, "ride": 0}
+    assert report["implausible"] == {"run": 2, "ride": 0, "power_5s": 1}
+    output = json.dumps(report)
+    for forbidden in ("217", "2345", "3.7", "7.3", "108.1", "270.2", str(day)):
+        assert forbidden not in output
+
+
+def test_best_efforts_on_an_empty_database(app_sessions: sessionmaker[Session]) -> None:
+    with app_sessions() as session:
+        report = _load_script().collect(session, TODAY)["best_efforts"]
+    assert report == {
+        "activities": 0,
+        "rows_per_group": {},
+        "with_distance_samples_but_no_distance_effort": {"run": 0, "ride": 0},
+        "implausible": {"run": 0, "ride": 0, "power_5s": 0},
+    }

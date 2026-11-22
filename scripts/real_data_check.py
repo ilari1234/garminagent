@@ -17,6 +17,12 @@ responses, how many activities carry it, how many distinct values it takes (a pr
 into every activity stays at one or two), and which unit or scale its values fit; plus what the
 normalized columns, the HR zone history and the threshold timeline hold, as counts per code.
 
+M6d follow-up (ADR 0013, owner's decisions on M6d): best efforts. Per group, kind and span, how
+many activities have a row and how many reached it; how many runs and rides have distance
+samples but no distance effort at all (for rides, every ride under 10 km); and how many efforts
+are implausibly fast or strong, which may be a spike the 12.5 and 30 m/s limits missed. A
+non-zero count needs a look, not a fix: a fast 400 m or a long descent can be real.
+
 Prints one JSON object on stdout: counts, byte sizes, day counts and Garmin's key names only. No
 measured value, date, ID or free text, so the output can be shared with a development session.
 Read-only; makes no Garmin requests.
@@ -36,12 +42,14 @@ from typing import Any, cast
 from sqlalchemy import ColumnElement, func, select, text
 from sqlalchemy.orm import Session
 
+from garminagent.analytics.best_efforts import DISTANCES_M
 from garminagent.analytics.sports import GROUPS, sport_group
 from garminagent.config import get_settings
 from garminagent.normalize import CM_PER_MS_TO_MPS, THRESHOLD_RANGES
 from garminagent.storage.db import make_engine, make_session_factory
 from garminagent.storage.models import (
     Activity,
+    ActivityBestEffort,
     ActivityFile,
     ActivityLap,
     ActivitySample,
@@ -97,6 +105,10 @@ THRESHOLD_KEY_HINTS = ("threshold", "ftp", "stress", "intensity")
 IF_FRACTION_MAX = 3.0
 IF_PERCENT_MAX = 300.0
 ZONE_FIELDS = ("max_hr", "resting_hr", "lthr")
+# Best efforts beyond these are implausible for the owner and suggest a missed GPS spike: mean
+# speed over a distance (m/s; 6.5 is 2:34 per km, 16.7 is 60 km/h), and 5 s power (W).
+IMPLAUSIBLE_MPS = {"run": 6.5, "ride": 16.7}
+IMPLAUSIBLE_5S_W = 2000.0
 CURSOR_FOR_TABLE = {
     "daily_summary": "daily_summaries",
     "sleep_summary": "sleep",
@@ -516,6 +528,43 @@ def samples_section(session: Session) -> dict[str, Any]:
     }
 
 
+def best_efforts_section(session: Session) -> dict[str, Any]:
+    """Best efforts (M6d): coverage per group, kind and span, and implausible efforts as counts."""
+    e = ActivityBestEffort
+    reached = (e.seconds.is_not(None)) | (e.power_w.is_not(None))
+    rows: dict[str, dict[str, dict[str, int]]] = {}
+    for group, kind, span, n, n_reached in session.execute(
+        select(e.sport_group, e.kind, e.span, func.count(), func.count().filter(reached))
+        .group_by(e.sport_group, e.kind, e.span)
+        .order_by(e.sport_group, e.kind, e.span)
+    ):
+        rows.setdefault(group, {})[f"{kind}_{span}"] = {"activities": n, "reached": n_reached}
+    without: dict[str, int] = {}
+    for group in DISTANCES_M:
+        with_samples = (
+            select(ActivitySample.activity_id).where(ActivitySample.distance_m.is_not(None)).distinct().subquery()
+        )
+        with_effort = select(e.activity_id).where(e.kind == "distance", e.seconds.is_not(None)).distinct().subquery()
+        ids = session.execute(
+            select(e.activity_id)
+            .where(e.sport_group == group, e.activity_id.in_(select(with_samples.c.activity_id)))
+            .where(e.activity_id.not_in(select(with_effort.c.activity_id)))
+            .distinct()
+        ).all()
+        without[group] = len(ids)
+    implausible = {
+        group: _count(session, e, e.sport_group == group, e.kind == "distance", e.span / e.seconds > limit)
+        for group, limit in IMPLAUSIBLE_MPS.items()
+    }
+    implausible["power_5s"] = _count(session, e, e.kind == "power", e.span == 5, e.power_w > IMPLAUSIBLE_5S_W)
+    return {
+        "activities": session.scalar(select(func.count(func.distinct(e.activity_id)))) or 0,
+        "rows_per_group": rows,
+        "with_distance_samples_but_no_distance_effort": without,
+        "implausible": implausible,
+    }
+
+
 def collect(session: Session, today: date | None = None) -> dict[str, Any]:
     today = today or datetime.now(UTC).date()
     return {
@@ -534,6 +583,7 @@ def collect(session: Session, today: date | None = None) -> dict[str, Any]:
         "sample_gaps_s": gaps_section(session),
         "by_sport": by_sport_section(session),
         "thresholds": thresholds_section(session),
+        "best_efforts": best_efforts_section(session),
     }
 
 

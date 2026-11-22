@@ -339,12 +339,15 @@ def renormalize(
 @app.command()
 def analyze(
     full: bool = typer.Option(
-        False, "--full", help="Recompute every activity whose metrics are out of date, ignoring the per-run cap."
+        False,
+        "--full",
+        help="Recompute every activity whose metrics or best efforts are out of date, ignoring the per-run cap.",
     ),
 ) -> None:
     """Run the analytics on stored data, as every sync does after FIT parsing: sport groups, the
-    threshold timeline, per-activity metrics and the daily load series (fitness, fatigue, form,
-    ramp). Metrics are recomputed only where their inputs changed, at most
+    threshold timeline, per-activity metrics, the daily load series (fitness, fatigue, form,
+    ramp) and per-activity best efforts. Metrics and best efforts are recomputed only where their
+    inputs changed, at most
     ANALYTICS_MAX_ACTIVITIES per run unless --full. Makes no Garmin requests. Prints counts,
     plus Garmin sport keys not yet grouped. Exit code 1 if a part failed."""
     options = AnalyticsOptions.from_settings(get_settings(), full=full)

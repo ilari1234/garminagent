@@ -1,7 +1,7 @@
 # Project state
 
 **What git can't tell you:** owners, blockers, decisions waiting on the owner, and what comes next.
-Last updated 2026-11-17. Facts that git and GitHub already hold are read from them, not copied here
+Last updated 2026-11-22. Facts that git and GitHub already hold are read from them, not copied here
 ([ADR 0016](decisions/0016-status-from-git.md)):
 
 | Question | Ask |
@@ -28,7 +28,8 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | M6a thresholds, zones, `analyze` | **Done** ([build notes](docs/build-notes/analytics.md#m6a-as-built-2026-11-07)) | | | |
 | M6b per-activity metrics | **Done** ([build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)) | | M6a | |
 | M6c fitness, fatigue, form | **Done** ([build notes](docs/build-notes/analytics.md#m6c-as-built-2026-11-12), [review](docs/reviews/m6c-review.md), [real-data check](docs/build-notes/analytics.md#real-data-check-for-m6c-2026-11-17)) | | M6b | |
-| M6d–M6e | **Next**, any order | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
+| M6d best efforts | **Done** ([build notes](docs/build-notes/analytics.md#m6d-as-built-2026-11-22), [review](docs/reviews/m6d-review.md)) | | M6b | Owner's real-data check (next steps) |
+| M6e recovery trends | **Next** | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
 | M6f | Planned (ADR 0013) | Track A | | |
 | AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
 | AWS B0 tooling | **Done**; its `infra-*` checks are required on `main` | | | |
@@ -49,16 +50,21 @@ Chores (Dependabot, CVE bumps) go to a separate short session.
 
 Open items only. Each one points at its row above instead of restating it.
 
-1. **Track A:** M6d and M6e, in any order. Each ends with a `reviewer` subagent review.
-2. **Owner, own terminal:** apply B1 by [docs/aws-b1-checklist.md](docs/aws-b1-checklist.md)
+1. **Track A:** M6e. It ends with a `reviewer` subagent review.
+2. **Owner, own terminal:** after M6d merges, run migration 0009, `analyze --full` and
+   `scripts/real_data_check.py`, and paste back the `best_effort_*` counts and the
+   `best_efforts` section (counts only). A non-zero `implausible` count needs a look (a real
+   fast 400 m or descent can trip it), and many `best_effort_counter_drops` would call for a
+   tolerance ([M6d review](docs/reviews/m6d-review.md), L1 and L3).
+3. **Owner, own terminal:** apply B1 by [docs/aws-b1-checklist.md](docs/aws-b1-checklist.md)
    (console steps, `org` and `account` applies, state migration, section 8 checks including firing
    the budget action once), then record the checks as yes/no in SECURITY.md's B1 review.
-3. **Track B:** B2 once B1 is applied (its code can start before). B3c/B3d must pass
+4. **Track B:** B2 once B1 is applied (its code can start before). B3c/B3d must pass
    `ANALYTICS_TRIMP_B` to the tasks, or HR load stays off on AWS.
-4. **Phase 3 design:** a fresh, read-only planning session can start now (M6b's numbers are
+5. **Phase 3 design:** a fresh, read-only planning session can start now (M6b's numbers are
    confirmed on real data). It settles OPEN_QUESTIONS 11 first (ADR 0007 and ADR 0013
    disagree on the acute:chronic ratio), before any limit numbers, then the rest of 10–18.
-5. **Before phase 3 is built:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
+6. **Before phase 3 is built:** settle OPEN_QUESTIONS 10–18, and pass B2's retention verification
    before any real prompt.
 
 ## What exists today

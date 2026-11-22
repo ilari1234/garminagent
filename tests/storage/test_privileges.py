@@ -129,11 +129,65 @@ def test_app_role_cannot_change_the_m6c_table(app_sessions: sessionmaker[Session
             session.execute(text(statement))
 
 
-@pytest.mark.parametrize("view", VIEWS_IN_0008)
-def test_the_weekly_view_is_read_only_for_the_app_role(
+NEW_IN_0009 = ("activity_best_effort",)
+VIEWS_IN_0009 = ("best_effort_curve", "best_effort_pb")
+BEST_EFFORT_ROW = (
+    "INSERT INTO activity_best_effort (athlete_id, activity_id, kind, span, activity_date, sport_group,"
+    " seconds, power_w, algo_version, input_fingerprint) VALUES (:a, 1, :kind, 400, CURRENT_DATE, 'run',"
+    " :seconds, :power, 1, 'x')"
+)
+
+
+def test_app_role_can_write_the_m6d_table_and_read_its_views(app_sessions: sessionmaker[Session]) -> None:
+    with app_sessions.begin() as session:
+        athlete_id = _activity(session)
+        session.execute(text(BEST_EFFORT_ROW), {"a": athlete_id, "kind": "distance", "seconds": 90.0, "power": None})
+        session.execute(text("UPDATE activity_best_effort SET seconds = 80"))
+        assert session.execute(text("SELECT seconds FROM best_effort_pb")).scalar_one() == 80
+        assert session.execute(text("SELECT count(*) FROM best_effort_curve")).scalar_one() == 4
+        session.execute(text("DELETE FROM activity_best_effort"))
+
+
+@pytest.mark.parametrize("table", NEW_IN_0009)
+def test_app_role_cannot_change_the_m6d_table(app_sessions: sessionmaker[Session], table: str) -> None:
+    for statement in (f"TRUNCATE {table}", f"ALTER TABLE {table} ADD COLUMN extra int", f"DROP TABLE {table}"):
+        with app_sessions() as session, pytest.raises(ProgrammingError, match=r"permission denied|must be owner"):
+            session.execute(text(statement))
+
+
+@pytest.mark.parametrize(
+    ("kind", "seconds", "power", "constraint"),
+    [
+        ("freetext", None, None, "ck_activity_best_effort_kind"),
+        ("distance", 90.0, 250.0, "ck_activity_best_effort_value"),
+        ("power", 90.0, None, "ck_activity_best_effort_value"),
+    ],
+)
+def test_activity_best_effort_refuses_free_text_and_mixed_values(
+    app_sessions: sessionmaker[Session], kind: str, seconds: float | None, power: float | None, constraint: str
+) -> None:
+    with app_sessions.begin() as session:
+        athlete_id = _activity(session)
+    with app_sessions() as session, pytest.raises(IntegrityError, match=constraint):
+        session.execute(text(BEST_EFFORT_ROW), {"a": athlete_id, "kind": kind, "seconds": seconds, "power": power})
+
+
+@pytest.mark.parametrize("view", VIEWS_IN_0008 + VIEWS_IN_0009)
+def test_rollup_views_run_with_the_readers_privileges(owner_engine: Engine, view: str) -> None:
+    """Invariant 7: a rollup view never shows more than the reader may read in its tables."""
+    with owner_engine.connect() as conn:
+        options = conn.execute(
+            text("SELECT reloptions FROM pg_class WHERE relname = :v AND relkind = 'v'"), {"v": view}
+        ).scalar_one()
+    assert "security_invoker=true" in (options or [])
+
+
+@pytest.mark.parametrize("view", VIEWS_IN_0008 + VIEWS_IN_0009)
+def test_rollup_views_are_read_only_for_the_app_role(
     migrated: PgDatabase, owner_engine: Engine, app_sessions: sessionmaker[Session], view: str
 ) -> None:
-    """0001's default privileges also cover views; 0008 revokes them so the rollup is SELECT only."""
+    """0001's default privileges also cover views; 0008 and 0009 revoke them so rollups are SELECT
+    only."""
     with owner_engine.connect() as conn:
         for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"):
             granted = conn.execute(
@@ -154,7 +208,12 @@ def test_daily_load_refuses_free_text_in_the_group_column(app_sessions: sessionm
 
 @pytest.mark.parametrize(
     ("revision", "tables", "sequences"),
-    [("0005", NEW_IN_0006, True), ("0006", NEW_IN_0007, False), ("0007", NEW_IN_0008, False)],
+    [
+        ("0005", NEW_IN_0006, True),
+        ("0006", NEW_IN_0007, False),
+        ("0007", NEW_IN_0008, False),
+        ("0008", NEW_IN_0009, False),
+    ],
 )
 def test_new_tables_are_granted_explicitly_without_default_privileges(
     migrated: PgDatabase, owner_engine: Engine, revision: str, tables: tuple[str, ...], sequences: bool
@@ -182,7 +241,7 @@ def test_new_tables_are_granted_explicitly_without_default_privileges(
                     assert conn.execute(
                         text("SELECT has_sequence_privilege(:r, :s, 'USAGE')"), {"r": role, "s": f"{table}_id_seq"}
                     ).scalar_one()
-            for view in VIEWS_IN_0008 if revision == "0007" else ():
+            for view in {"0007": VIEWS_IN_0008, "0008": VIEWS_IN_0009}.get(revision, ()):
                 assert conn.execute(
                     text("SELECT has_table_privilege(:r, :t, 'SELECT')"), {"r": role, "t": view}
                 ).scalar_one(), f"{role} lacks SELECT on {view}"

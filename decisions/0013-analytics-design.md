@@ -2,11 +2,12 @@
 
 **Status:** Accepted (owner's decision, 2026-11-03). The phase 2 planning session produced this on
 2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
-the owner's answers are recorded below. M6a (2026-11-07), M6b (2026-11-09) and M6c (2026-11-12)
-are built; what was built, choices made where this ADR left room, and the real-data findings are in
+the owner's answers are recorded below. M6a (2026-11-07), M6b (2026-11-09), M6c (2026-11-12)
+and M6d (2026-11-22) are built; what was built, choices made where this ADR left room, and the real-data findings are in
 [docs/build-notes/analytics.md](../docs/build-notes/analytics.md) (ADR 0017). The owner's answers
 on M6b's threshold inputs are under *Owner's decisions on M6b's inputs*, and on M6c's series under
-*Owner's decisions on M6c*. M6d–M6f are not built yet.
+*Owner's decisions on M6c*, and on M6d's best efforts under *Owner's decisions on M6d*. M6e–M6f
+are not built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -34,7 +35,7 @@ The phase 1 retro adds two constraints: upserts rewrite `updated_at` on recent r
 | M6a | `hr_zones` dataset (one request per day), `athlete_zones` and `athlete_threshold` history, new `activity` threshold columns, `renormalize`, `thresholds set/list`, sport grouping, an `analyze` step after FIT parsing | 0006 |
 | M6b | `activity_metrics` per activity | 0007 |
 | M6c | `daily_load`: fitness, fatigue, form, ramp; weekly view | 0008 |
-| M6d | `activity_best_effort`; curves as SQL | 0009 |
+| M6d | `activity_best_effort`; curves as SQL (views `best_effort_curve`, `best_effort_pb`) | 0009 |
 | M6e | `daily_recovery`: trends against baselines, with flags | 0010 |
 | M6f | `agent` schema of views, `garminagent_agent` role, typed queries, `analyze --check`, `report` | 0011 |
 
@@ -165,6 +166,30 @@ Points the table above named but didn't define, answered before M6c was built.
   (3 × 42), plus `thresholds_backfilled` when any load counted that day used backward-filled values.
 - **The weekly view uses ISO weeks** (Monday start): summed load, sessions and moving time, and
   fitness, fatigue, form and ramp as of the week's last day.
+
+## Owner's decisions on M6d (2026-11-22)
+
+Points the *Best efforts* row left open, answered one at a time before M6d was built.
+
+- **Efforts stop at pauses.** Neither a distance effort nor a power window crosses a gap over
+  `MAX_GAP_S`, as for weighted power: a 20-minute effort with a café stop in it isn't one.
+- **Distances and windows:** runs 400 m, 1 km, 1 mile, 5 km, 10 km, half marathon (21 097.5 m)
+  and marathon; rides 10, 20, 40 and 100 km; power, in any group that has it, 5 s, 15 s, 30 s,
+  1, 5, 10, 20, 30 and 60 min, and 2, 3 and 5 h. Other groups get no distance efforts.
+- **Distance comes from the watch's running total** (`distance_m`), interpolated between samples
+  to the metre, not from summed speed, so results match Garmin's own laps more often. A total
+  that goes down (a counter reset) breaks the track like a pause and is counted.
+- **GPS spikes break the track**: a step faster than 12.5 m/s for runs or 30 m/s for rides is
+  treated as a break and counted. The run limit sits just above the fastest measured human sprint
+  speed, 12.32 m/s (Bolt's 2009 100 m world record, from laser measurements;
+  [Bioengineering 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC10669785/), checked
+  2026-11-22); the ride limit above fast road descents. Both are high enough never to drop a real
+  effort; no other speed filter guesses at slower distortions. Power gets no extra filter: samples
+  are range-checked when stored, and real sprints reach 1500–2000 W.
+- **Curves and PBs are views:** `best_effort_curve`, the best per sport group, kind and span for
+  all time and for the last 365, 90 and 42 days (counted back from the day the view is read), and
+  `best_effort_pb`, the all-time best with the best set before it. Both carry the activity ID so
+  a person can look it up; M6f's agent views leave IDs out (docs/plan.md, data handling).
 
 ## Alternatives considered
 
