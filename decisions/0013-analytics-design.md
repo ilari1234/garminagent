@@ -179,8 +179,12 @@ Points the *Best efforts* row left open, answered one at a time before M6d was b
 - **Distance comes from the watch's running total** (`distance_m`), interpolated between samples
   to the metre, not from summed speed, so results match Garmin's own laps more often. A total
   that goes down (a counter reset) breaks the track like a pause and is counted.
-- **GPS spikes break the track**: a step faster than 12.5 m/s for runs or 30 m/s for rides is
-  treated as a break and counted. The run limit sits just above the fastest measured human sprint
+- **A GPS spike adds no distance**: a step faster than 12.5 m/s for runs or 30 m/s for rides keeps
+  its time, contributes no distance and is counted; the effort goes on across it, so an effort
+  across a spike is slower than the truth, never faster. *Revised the same day after the
+  real-data check:* the first rule treated a spike as a break, and with spikes in about a third
+  of rides and a fifth of runs that cost roughly one 10 km effort in five (the counts are in the
+  build notes, *Real-data check for M6d*). The run limit sits just above the fastest measured human sprint
   speed, 12.32 m/s (Bolt's 2009 100 m world record, from laser measurements;
   [Bioengineering 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC10669785/), checked
   2026-11-22); the ride limit above fast road descents. Both are high enough never to drop a real

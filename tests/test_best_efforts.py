@@ -131,18 +131,47 @@ def test_a_step_over_the_groups_limit_is_a_spike(group: SportGroup, jump: float,
 
     pieces, spikes, drops = distance_pieces(before + after, {"run": 12.5, "ride": 30.0}[group])
 
-    assert (spikes, drops, len(pieces)) == ((1, 0, 2) if spike else (0, 0, 1))
+    # A spike keeps the piece whole but drops its step's distance.
+    assert (spikes, drops, len(pieces)) == ((1 if spike else 0), 0, 1)
+    (times, dists) = pieces[0]
+    assert dists[-1] - dists[0] == pytest.approx(600.0 if spike else 600.0 + jump)
+    assert times[-1] - times[0] == 151
 
 
-def test_a_spike_cannot_make_a_best_effort() -> None:
-    samples = track([(75, 4.0)])
-    samples.append(Point(76, None, None, None, 300 + 200.0))  # 200 m in one second
+def test_an_effort_across_a_spike_is_slower_never_faster() -> None:
+    samples = track([(75, 4.0)])  # 300 m in 75 s
+    samples.append(Point(76, None, None, None, 300 + 200.0))  # 200 m in one second: dropped
     samples += [Point(p.elapsed_s + 77, None, None, None, 500 + (p.distance_m or 0)) for p in track([(75, 4.0)])]
 
     result = compute(samples, "run")
 
     assert result.spikes == 1
-    assert by_span(result, "distance")[400].seconds is None
+    # 300 m on each side, so 400 m must cross the spike: 100 s at 4 m/s plus the 2 s that
+    # added no distance, where keeping the jump would have given 50 s.
+    assert by_span(result, "distance")[400].seconds == pytest.approx(102.0)
+    assert by_span(result, "distance")[1000].seconds is None  # 600 m counted, not 800
+
+
+def test_spikes_dropped_one_after_another_add_up() -> None:
+    samples = track([(50, 4.0)])  # 200 m
+    samples += [Point(51, None, None, None, 400.0), Point(52, None, None, None, 600.0)]  # two jumps
+    samples += [Point(p.elapsed_s + 53, None, None, None, 600 + (p.distance_m or 0)) for p in track([(50, 4.0)])]
+
+    pieces, spikes, _ = distance_pieces(samples, 12.5)
+
+    assert spikes == 2
+    assert pieces[0][1][-1] - pieces[0][1][0] == pytest.approx(400.0)
+
+
+def test_a_pause_after_a_spike_starts_the_next_piece_from_the_watchs_total() -> None:
+    samples = track([(50, 4.0)])
+    samples.append(Point(51, None, None, None, 400.0))  # spike, dropped
+    samples += [Point(p.elapsed_s + 80, None, None, None, 400 + (p.distance_m or 0)) for p in track([(50, 4.0)])]
+
+    pieces, spikes, _ = distance_pieces(samples, 12.5)
+
+    assert (spikes, len(pieces)) == (1, 2)
+    assert pieces[1][1][0] == 400.0  # not shifted by the earlier piece's dropped distance
 
 
 def test_a_missing_distance_breaks_the_track() -> None:

@@ -169,8 +169,9 @@ counts those that have no load at all, and `daily_load_reliable_days` counts day
 Best efforts follow the same rule as the metrics: recomputed only when an activity's FIT file,
 day, sport or the algorithm changes, at most `ANALYTICS_MAX_ACTIVITIES` per run
 (`best_effort_pending` counts what is left; `analyze --full` does it at once). After the upgrade
-to M6d every activity is pending once. `best_effort_spikes` and `best_effort_counter_drops` count
-GPS jumps and distance resets that broke a track in this run.
+to M6d every activity is pending once. `best_effort_spikes` counts GPS jumps whose
+distance was dropped in this run (efforts go on across them, a little slower), and
+`best_effort_counter_drops` distance resets that broke a track.
 
 HR load needs `ANALYTICS_TRIMP_B` in `.env`: `1.92` or `1.67`, Banister's published coefficients
 for men and for women. It has no default; while it is unset, activities without power get no load,
