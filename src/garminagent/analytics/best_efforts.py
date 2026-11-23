@@ -7,11 +7,16 @@ every break, and an effort never crosses one (owner's decisions, 2026-11-22):
 
 - a **pause**: a gap over MAX_GAP_S between samples, the same rule as every other metric;
 - a **missing value**: a sample without `distance_m`, never filled from a neighbour;
-- a **counter drop**: the total going down (some watches reset it after a pause);
-- a **spike**: a step faster than the group's SPIKE_LIMIT_MPS, which is GPS noise, not
-  running. The run limit sits just above the fastest measured human sprint speed (12.32 m/s,
-  Bolt's 2009 100 m world record, laser data reanalysed in Bioengineering, 2023); the ride
-  limit above fast road descents. Both are set high so they never drop a real effort.
+- a **counter drop**: the total going down (some watches reset it after a pause).
+
+A **spike**, a step faster than the group's SPIKE_LIMIT_MPS, is not a break: the step keeps its
+time but adds no distance, and the piece goes on (owner's decision after the real-data check,
+2026-11-22; version 1 broke the track there and lost about one 10 km effort in five). Most
+spikes look like GPS catching up after lost signal: the distance is real but its timing isn't.
+An effort across a spike is therefore slower than the truth, never faster. The run limit sits
+just above the fastest measured human sprint speed (12.32 m/s, Bolt's 2009 100 m world record,
+laser measurements reanalysed in Bioengineering, 2023); the ride limit above fast road descents.
+Both are set high so no real step is dropped.
 
 Within a piece, distance against time is piecewise linear and never falls, so for a target D
 the time `T(d + D) - t` is piecewise linear in the start, and its minimum lies where the start
@@ -34,7 +39,7 @@ from typing import Final, Literal
 from garminagent.analytics.metrics import MAX_GAP_S, Point, channel_runs, expand
 from garminagent.analytics.sports import SportGroup
 
-BEST_EFFORT_ALGO_VERSION: Final = 1
+BEST_EFFORT_ALGO_VERSION: Final = 2
 
 MILE_M: Final = 1609.344
 # Distances in metres, per group that gets distance efforts (owner's decision, 2026-11-22).
@@ -44,7 +49,7 @@ DISTANCES_M: Final[Mapping[SportGroup, tuple[float, ...]]] = {
 }
 # Power windows in seconds, for every group.
 POWER_WINDOWS_S: Final = (5, 15, 30, 60, 300, 600, 1200, 1800, 3600, 7200, 10800, 18000)
-# A step faster than this (m/s) is a GPS spike and breaks the track.
+# A step faster than this (m/s) is a GPS spike: it keeps its time but adds no distance.
 SPIKE_LIMIT_MPS: Final[Mapping[SportGroup, float]] = {"run": 12.5, "ride": 30.0}
 
 
@@ -62,7 +67,7 @@ class Effort:
 @dataclass(frozen=True)
 class BestEfforts:
     efforts: tuple[Effort, ...]
-    spikes: int  # steps dropped as GPS spikes
+    spikes: int  # steps whose distance was dropped as a GPS spike
     counter_drops: int  # steps where the distance total went down
 
 
@@ -90,12 +95,15 @@ type Piece = tuple[list[float], list[float]]  # (times, distances), both non-dec
 
 
 def distance_pieces(ordered: Sequence[Point], spike_limit: float) -> tuple[list[Piece], int, int]:
-    """Cut the samples into pieces at pauses, missing values, counter drops and spikes. Returns
-    the pieces with at least two samples and the spike and counter-drop counts."""
+    """Cut the samples into pieces at pauses, missing values and counter drops, dropping the
+    distance of spike steps. Returns the pieces with at least two samples and the spike and
+    counter-drop counts."""
     pieces: list[Piece] = []
     spikes = drops = 0
     times: list[float] = []
-    dists: list[float] = []
+    dists: list[float] = []  # the watch's total less the spike steps dropped in this piece
+    previous = 0.0  # the watch's total at the previous sample
+    dropped = 0.0
 
     def close() -> None:
         if len(times) >= 2:
@@ -110,7 +118,7 @@ def distance_pieces(ordered: Sequence[Point], spike_limit: float) -> tuple[list[
             continue
         if times:
             dt = point.elapsed_s - times[-1]
-            step = d - dists[-1]
+            step = d - previous
             if dt > MAX_GAP_S:
                 close()
             elif step < 0:
@@ -118,9 +126,12 @@ def distance_pieces(ordered: Sequence[Point], spike_limit: float) -> tuple[list[
                 close()
             elif step > spike_limit * dt:
                 spikes += 1
-                close()
+                dropped += step
+        if not times:  # a new piece starts from the watch's own total
+            dropped = 0.0
         times.append(float(point.elapsed_s))
-        dists.append(d)
+        dists.append(d - dropped)
+        previous = d
     close()
     return pieces, spikes, drops
 

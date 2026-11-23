@@ -228,8 +228,9 @@ where the ADR left room; they change no milestone or metric definition.
   every sample, with binary search for the other end. A brute-force test checks it on random
   uneven tracks.
 - **Distance pieces need two samples with distance.** A sample without `distance_m` breaks the
-  track (never filled), as do pauses, counter drops and spikes. Time standing still while the
-  watch recorded counts, as in M6b's moving time.
+  track (never filled), as do pauses and counter drops. A spike step keeps its time but adds no
+  distance (version 2, below). Time standing still while the watch recorded counts, as in M6b's
+  moving time.
 - **Power windows** reuse M6b's 1 s expansion and its runs of seconds with power
   (`metrics.channel_runs`, formerly private), so a window crosses neither a pause nor a second
   without power; there's no coverage gate, since a window is whole or absent. Runs get power
@@ -265,6 +266,27 @@ What later work must know:
 - **After a `BEST_EFFORT_ALGO_VERSION` bump the views mix versions** until every activity is
   recomputed (`best_effort_pending` > 0): run `analyze --full` after a bump, or have M6f's agent
   views filter on the current version (M6d review, L4).
-- **Any decrease in `distance_m` is a counter drop**, even a centimetre. If the owner's
-  real-data run shows many `best_effort_counter_drops`, a small tolerance is the fix (M6d
-  review, L1).
+- **Any decrease in `distance_m` is a counter drop**, even a centimetre. The owner's real-data
+  run found none (below), so no tolerance is needed (M6d review, L1, closed).
+
+## Real-data check for M6d (2026-11-22)
+
+The owner ran migration 0009, `analyze --full` and `scripts/real_data_check.py` on the real
+database, then a one-off read-only query for spikes per group. Counts only:
+
+- **Every activity computed once:** 370 in the `--full` run plus 200 by the scheduler's sync just
+  before it (the per-run cap), 0 pending.
+- **0 counter drops** (closes review L1) and **0 implausible** efforts (runs, rides, 5 s power).
+- **Runs complete:** all 233 reach 400 m and 1 km, 232 the mile, 226 5 km, 76 10 km, 4 the half
+  marathon; none with distance samples lacks a distance effort.
+- **Power only on skis:** 15 of 18 ski sessions, matching the samples; no run or ride has power.
+- **Spikes are common:** 112 spike steps in 93 of 268 rides, 54 in 44 of 233 runs. With version 1
+  each broke the track. Leaving out spike steps and pauses, 154 rides and 94 runs still cover
+  10 km, but only 124 and 76 got a 10 km effort: about one in five lost it to the breaks.
+- **One sport key not yet grouped:** `lap_swimming` (one activity, counted as `other`).
+
+**Version 2 (owner's decision, same day):** a spike step keeps its time but adds no distance, and
+the piece goes on, so efforts across a spike come back, slower than the truth rather than
+missing. Pauses still break, as decided. `BEST_EFFORT_ALGO_VERSION` is 2, so every activity is
+recomputed once; the owner's rerun should show more rides and runs reaching 10 km (up to the 154
+and 94 above, less those cut by pauses).

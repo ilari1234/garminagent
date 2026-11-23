@@ -28,7 +28,7 @@ ultra, road and gravel cycling) from the owner's Garmin Connect data. Single use
 | M6a thresholds, zones, `analyze` | **Done** ([build notes](docs/build-notes/analytics.md#m6a-as-built-2026-11-07)) | | | |
 | M6b per-activity metrics | **Done** ([build notes](docs/build-notes/analytics.md#m6b-as-built-2026-11-09)) | | M6a | |
 | M6c fitness, fatigue, form | **Done** ([build notes](docs/build-notes/analytics.md#m6c-as-built-2026-11-12), [review](docs/reviews/m6c-review.md), [real-data check](docs/build-notes/analytics.md#real-data-check-for-m6c-2026-11-17)) | | M6b | |
-| M6d best efforts | **Done** ([build notes](docs/build-notes/analytics.md#m6d-as-built-2026-11-22), [review](docs/reviews/m6d-review.md)) | | M6b | Owner's real-data check (next steps) |
+| M6d best efforts | **Done** ([build notes](docs/build-notes/analytics.md#m6d-as-built-2026-11-22), [review](docs/reviews/m6d-review.md), [real-data check](docs/build-notes/analytics.md#real-data-check-for-m6d-2026-11-22)) | | M6b | Owner's rerun after spike rule v2 (next steps) |
 | M6e recovery trends | **Next** | Track A | M6b | OPEN_QUESTIONS 40 (lab test input), 41 (decoupling steadiness) |
 | M6f | Planned (ADR 0013) | Track A | | |
 | AWS plan | **Accepted** ([ADR 0008](decisions/0008-cloud-deployment.md), [docs/aws-deployment.md](docs/aws-deployment.md)) | | | |
@@ -51,11 +51,11 @@ Chores (Dependabot, CVE bumps) go to a separate short session.
 Open items only. Each one points at its row above instead of restating it.
 
 1. **Track A:** M6e. It ends with a `reviewer` subagent review.
-2. **Owner, own terminal:** after M6d merges, run migration 0009, `analyze --full` and
-   `scripts/real_data_check.py`, and paste back the `best_effort_*` counts and the
-   `best_efforts` section (counts only). A non-zero `implausible` count needs a look (a real
-   fast 400 m or descent can trip it), and many `best_effort_counter_drops` would call for a
-   tolerance ([M6d review](docs/reviews/m6d-review.md), L1 and L3).
+2. **Owner, own terminal:** after the spike rule v2 merges, rebuild, then rerun `analyze --full`
+   and `scripts/real_data_check.py`, and paste back the `best_effort_*` counts and the
+   `best_efforts` section (counts only). Ride `distance_10000` reached should rise from 124
+   toward 154, run from 76 toward 94, with `implausible` still 0
+   ([real-data check](docs/build-notes/analytics.md#real-data-check-for-m6d-2026-11-22)).
 3. **Owner, own terminal:** apply B1 by [docs/aws-b1-checklist.md](docs/aws-b1-checklist.md)
    (console steps, `org` and `account` applies, state migration, section 8 checks including firing
    the budget action once), then record the checks as yes/no in SECURITY.md's B1 review.

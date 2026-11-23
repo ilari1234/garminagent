@@ -95,8 +95,8 @@ columns and types; this file says what they mean and who may rely on what. Reaso
   (an older one synced) shifts the whole series.
 - **`activity_best_effort` has a row for every span the group is looked for**, with the value
   NULL when the activity didn't reach it: NULL means "not reached", never 0. Distance efforts are
-  only as good as the watch's distance (spikes over 12.5 m/s running or 30 m/s riding break the
-  track; slower GPS errors aren't caught). The curve view's periods count back from
+  only as good as the watch's distance: steps over 12.5 m/s running or 30 m/s riding add no
+  distance, so an effort across one is slower than the truth; slower GPS errors aren't caught. The curve view's periods count back from
   `CURRENT_DATE` in the reader's time zone.
 - **`athlete_zones.valid_from` is when we first saw a change**, not when it was made in Garmin, and
   history starts with the first fetch (M6a). Earlier dates fall back to activity values.
