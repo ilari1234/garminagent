@@ -290,3 +290,18 @@ the piece goes on, so efforts across a spike come back, slower than the truth ra
 missing. Pauses still break, as decided. `BEST_EFFORT_ALGO_VERSION` is 2, so every activity is
 recomputed once; the owner's rerun should show more rides and runs reaching 10 km (up to the 154
 and 94 above, less those cut by pauses).
+
+**The rerun with version 2 (2026-11-23)**, counts only:
+
+- **Rides reaching 10 km: 124 → 149** of the 154 that cover it; the other 5 are cut by pauses.
+  Rides with distance samples but no distance effort fell from 144 to 119, now rides shorter
+  than 10 km.
+- **Runs reaching 10 km: 76, unchanged.** The 18 runs between 76 and 94 cover 10 km only across
+  a pause (a stop over 10 s), not across a spike: the spike query summed distance over
+  pause-separated pieces. One run now reaches the marathon (0 before), where a spike had cut it.
+- **Unchanged:** 139 spike steps, 0 counter drops, 0 implausible, 0 pending (370 computed in the
+  run plus 200 by the scheduler's sync before it).
+
+What later work must know: pauses are now the only thing cutting long efforts. If the curves
+look too thin, bridging short stops (for example up to 30 s, their time counted) would recover
+those runs, but it reverses the owner's first M6d decision and needs a new one.
