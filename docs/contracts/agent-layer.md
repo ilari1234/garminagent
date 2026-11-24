@@ -36,7 +36,7 @@ the accepted phase 2 plan (ADR 0013) and are built in M6f. Items marked **Open**
 | `sessions` | Per-session summary: date, sport, duration, distance, load, TE, average HR, pace, power |
 | `zone_distribution` | Time in zones |
 | `best_efforts` | Curves and bests by range and sport |
-| `recovery_trend` | HRV, resting HR, sleep, Body Battery and stress trends, with flags |
+| `recovery_trend` | HRV and resting HR trends against their baselines, with flags, from `daily_recovery` (M6e). Sleep, Body Battery and stress trends aren't computed; phase 3 design decides whether to add them (ADR 0013, *Owner's decisions on M6e*) |
 | `current_thresholds` | Thresholds in effect |
 
 Weight isn't exposed.

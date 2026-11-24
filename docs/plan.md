@@ -225,7 +225,9 @@ from the AWS track (code-only) lands before M6a.
 - **M6d — Best efforts:** `activity_best_effort` for power (5 s–5 h) and distance (400 m–marathon);
   curves and PBs as SQL; migration 0009.
 - **M6e — Recovery trends:** `daily_recovery` with HRV and resting HR against 60-day baselines,
-  sleep, Body Battery and stress trends, Garmin's status alongside; no weight; migration 0010.
+  with flags; no weight; migration 0010. Sleep, Body Battery and stress trends were left out
+  (owner's decision, ADR 0013 *Owner's decisions on M6e*); phase 3 design decides whether an
+  agent needs them. Garmin's HRV status stays readable in `hrv_summary`.
 - **M6f — Agent read layer:** `agent` schema of allowlisted views, `garminagent_agent` role with
   SELECT on that schema only, typed bounded queries without Garmin IDs, `analyze --check`
   (counts within tolerance against Garmin's own values) and `report`; migration 0011.

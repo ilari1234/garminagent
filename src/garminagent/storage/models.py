@@ -527,3 +527,44 @@ class SyncRun(Base):
     counts: Mapped[Any] = mapped_column(JSONB)
 
     __table_args__ = (Index("ix_sync_run_finished", "athlete_id", "finished_at"),)
+
+
+class DailyRecovery(Base):
+    """HRV and resting HR trends per day against their own baselines, with flags (ADR 0013,
+    M6e), rebuilt by every `analyze` from `hrv_summary` and `daily_summary`. Every day from the
+    first to the last day with either input has a row; means are NULL below the minimum day
+    counts, and a trend needs both a recent mean and a baseline. Definitions are in
+    `garminagent.analytics.daily_recovery`. Trends, not diagnoses."""
+
+    __tablename__ = "daily_recovery"
+
+    athlete_id: Mapped[int] = mapped_column(ForeignKey("athlete.id", ondelete="CASCADE"), primary_key=True)
+    calendar_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    algo_version: Mapped[int] = mapped_column(SmallInteger)
+    hrv_days: Mapped[int] = mapped_column(SmallInteger)  # nights with HRV in the 7-day window
+    hrv_ln_mean: Mapped[float | None] = mapped_column(Float, nullable=True)  # mean of ln(ms)
+    hrv_baseline_days: Mapped[int] = mapped_column(SmallInteger)  # of the 60 days before
+    hrv_baseline_ln_mean: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hrv_baseline_ln_sd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hrv_trend: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    rhr_days: Mapped[int] = mapped_column(SmallInteger)
+    rhr_mean: Mapped[float | None] = mapped_column(Float, nullable=True)  # bpm
+    rhr_baseline_days: Mapped[int] = mapped_column(SmallInteger)
+    rhr_baseline_mean: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rhr_baseline_sd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rhr_trend: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_now())
+
+    __table_args__ = (
+        CheckConstraint("hrv_trend IN ('below', 'within', 'above')", name="hrv_trend"),
+        CheckConstraint("rhr_trend IN ('below', 'within', 'above')", name="rhr_trend"),
+        # A trend exists exactly when its recent mean and baseline do.
+        CheckConstraint(
+            "(hrv_trend IS NULL) = (hrv_ln_mean IS NULL OR hrv_baseline_ln_mean IS NULL OR hrv_baseline_ln_sd IS NULL)",
+            name="hrv_trend_inputs",
+        ),
+        CheckConstraint(
+            "(rhr_trend IS NULL) = (rhr_mean IS NULL OR rhr_baseline_mean IS NULL OR rhr_baseline_sd IS NULL)",
+            name="rhr_trend_inputs",
+        ),
+    )

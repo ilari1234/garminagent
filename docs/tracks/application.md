@@ -1,6 +1,6 @@
 # Track A: application
 
-Entry point for a session working on `src/` and migrations (phase 2 now: M6e–M6f). Read this
+Entry point for a session working on `src/` and migrations (phase 2 now: M6f). Read this
 instead of every doc; follow the links only for what your milestone touches.
 
 ## Read first

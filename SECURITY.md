@@ -179,6 +179,26 @@ are the normalized samples, already range-checked, with NULL, gaps, counter drop
 handled and tested; no new dependency, action or image; `/security-review` run; threat model
 unchanged.
 
+### M6e analytics review (2026-11-24)
+
+`/security-review` on the M6e change: no findings at the reporting bar. It checked migration 0010's
+role interpolation (validated with `ROLE_NAME`, constant table name) and its grants (DML on
+`daily_recovery` only, tested in `tests/storage/test_privileges.py`, including without 0001's
+default privileges); bound parameters in every new query, each scoped by `athlete_id`; CHECK
+constraints on the trend codes and on a trend existing only with its inputs; the purge covering
+the new table; and that `analyze` output, `sync_run.counts` and the real-data check's `recovery`
+section carry counts only (no HRV, resting HR, dates or IDs; tested). Garmin's HRV status code
+appears in the real-data check as a category key, filtered to upper-case codes. How the flags
+split is kept out of `analyze`'s counts, which reach the logs, and printed only by the real-data
+check in the owner's terminal. The threat model is unchanged: recovery trends are derived from
+wellness rows already stored. They are health data, so M6f's agent views follow the data-handling
+rules in docs/plan.md like the other derived tables.
+
+Checklist: no new secret; no new personal data beyond values derived from stored HRV and resting
+HR; inputs are the normalized wellness rows, already range-checked, with missing nights and a zero
+HRV handled and tested; no new dependency, action or image; `/security-review` run; threat model
+unchanged.
+
 ### B3b app code review (2026-11-07)
 
 `/security-review` on the B3b change: no findings at the reporting bar. It checked `db-bootstrap`'s

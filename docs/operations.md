@@ -146,7 +146,8 @@ It groups activities by sport, rebuilds the threshold timeline, brings the per-a
 (`activity_metrics`, M6b) up to date and rebuilds fitness, fatigue, form and ramp per day
 (`daily_load`, M6c; weekly in the view `daily_load_weekly`), and brings each activity's best
 efforts up to date (`activity_best_effort`, M6d; curves and PBs in the views `best_effort_curve`
-and `best_effort_pb`). It never fails a sync:
+and `best_effort_pb`), and rebuilds HRV and resting HR trends per day (`daily_recovery`, M6e).
+It never fails a sync:
 its counts are in `sync_run.counts["analytics"]`, and a failure shows as `"errors"` there and as a
 log line naming the exception class. `analyze` prints `unmapped_sport_keys`: Garmin activity types
 not yet in a sport group (they count as `other`; add them in `garminagent/analytics/sports.py`).
@@ -172,6 +173,14 @@ day, sport or the algorithm changes, at most `ANALYTICS_MAX_ACTIVITIES` per run
 to M6d every activity is pending once. `best_effort_spikes` counts GPS jumps whose
 distance was dropped in this run (efforts go on across them, a little slower), and
 `best_effort_counter_drops` distance resets that broke a track.
+
+Recovery trends are rebuilt in full every run from `hrv_summary` and `daily_summary`, and only
+changed rows are written. `daily_recovery_hrv_days` and `_rhr_days` count days with a recent
+7-day mean (4 nights or more), and `_hrv_flagged_days` and `_rhr_flagged_days` days that also
+have a baseline (30 or more nights in the 60 days before), so they carry a flag. With nights
+every day the first flag comes 36 days after the first night. About one flagged day in five
+being `below` or `above` is what steady recovery looks like (ADR 0013, *Owner's decisions on
+M6e*).
 
 HR load needs `ANALYTICS_TRIMP_B` in `.env`: `1.92` or `1.67`, Banister's published coefficients
 for men and for women. It has no default; while it is unset, activities without power get no load,

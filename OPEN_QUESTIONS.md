@@ -106,8 +106,12 @@ ADR 0007 sets principles only.
     force a retry.
 30. **Grade-adjusted pace** for running load: pending a check of Minetti's coefficients against the
     paper (ADR 0013).
-31. **HRV smallest worthwhile change:** ±0.5 SD is convention; the AIS guide's formula wasn't confirmed
-    because its PDF couldn't be opened (ADR 0013).
+31. **HRV smallest worthwhile change:** M6e uses ±0.5 SD of the single days in the 60-day
+    baseline (synthetic steady nights: about one day in five flagged). The only source found
+    for it (2026-11-23) is TrainingPeaks' summary of a Plews-led study, not the paper itself; the
+    AIS guide's PDF link now redirects to a 404. Close this once a primary source (the Plews or
+    Javaloyes paper, or the AIS guide) is read; a different factor means a new `algo_version`
+    (ADR 0013, *Owner's decisions on M6e*).
 32. **The scheduler health check** relies on `status --max-age-hours 13`. Whether it's noisy in
     practice is unknown.
 34. **Phase 1 review findings** ([docs/reviews/phase1-review.md](docs/reviews/phase1-review.md),
