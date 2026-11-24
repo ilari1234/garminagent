@@ -23,6 +23,12 @@ samples but no distance effort at all (for rides, every ride under 10 km); and h
 are implausibly fast or strong, which may be a spike the 12.5 and 30 m/s limits missed. A
 non-zero count needs a look, not a fix: a fast 400 m or a long descent can be real.
 
+M6e follow-up (ADR 0013, owner's decisions on M6e): recovery trends. How many days the series
+has, how many reach the minimum nights for a recent mean and a baseline, how the flags split
+(below, within, above) for HRV and resting HR, and a cross-count of our HRV flag against
+Garmin's own HRV status code for the same day, as a plausibility check, not a target: the two
+use different windows and bands.
+
 Prints one JSON object on stdout: counts, byte sizes, day counts and Garmin's key names only. No
 measured value, date, ID or free text, so the output can be shared with a development session.
 Read-only; makes no Garmin requests.
@@ -55,6 +61,7 @@ from garminagent.storage.models import (
     ActivitySample,
     AthleteThreshold,
     AthleteZones,
+    DailyRecovery,
     DailySummary,
     HrvSummary,
     RawPayload,
@@ -565,6 +572,41 @@ def best_efforts_section(session: Session) -> dict[str, Any]:
     }
 
 
+def recovery_section(session: Session) -> dict[str, Any]:
+    """Recovery trends (M6e): coverage and how the flags split, as counts."""
+    r = DailyRecovery
+
+    def split(trend: Any) -> dict[str, int]:
+        found = dict(session.execute(select(trend, func.count()).where(trend.is_not(None)).group_by(trend)).all())
+        return {code: int(found.get(code, 0)) for code in ("below", "within", "above")}
+
+    garmin: dict[str, dict[str, int]] = {}
+    for ours, status, n in session.execute(
+        select(r.hrv_trend, HrvSummary.status, func.count())
+        .join(HrvSummary, (HrvSummary.athlete_id == r.athlete_id) & (HrvSummary.calendar_date == r.calendar_date))
+        .where(r.hrv_trend.is_not(None))
+        .group_by(r.hrv_trend, HrvSummary.status)
+    ):
+        garmin.setdefault(str(ours), {})[_code(status)] = n  # ours is never NULL here (WHERE)
+    return {
+        "days": _count(session, r),
+        "hrv_days_with_mean": _count(session, r, r.hrv_ln_mean.is_not(None)),
+        "hrv_days_with_baseline": _count(session, r, r.hrv_baseline_ln_mean.is_not(None)),
+        "rhr_days_with_mean": _count(session, r, r.rhr_mean.is_not(None)),
+        "rhr_days_with_baseline": _count(session, r, r.rhr_baseline_mean.is_not(None)),
+        "hrv_trend": split(r.hrv_trend),
+        "rhr_trend": split(r.rhr_trend),
+        "hrv_trend_by_garmin_status": garmin,
+    }
+
+
+def _code(value: object) -> str:
+    """Garmin's HRV status is a short code (`BALANCED`); anything else is counted, not shown."""
+    if value is None:
+        return "none"
+    return value if isinstance(value, str) and value.isupper() and value.replace("_", "").isalpha() else "other"
+
+
 def collect(session: Session, today: date | None = None) -> dict[str, Any]:
     today = today or datetime.now(UTC).date()
     return {
@@ -584,6 +626,7 @@ def collect(session: Session, today: date | None = None) -> dict[str, Any]:
         "by_sport": by_sport_section(session),
         "thresholds": thresholds_section(session),
         "best_efforts": best_efforts_section(session),
+        "recovery": recovery_section(session),
     }
 
 

@@ -2,8 +2,9 @@
 `garminagent analyze`. Makes no Garmin requests.
 
 It groups activities by sport, rebuilds the derived threshold timeline (M6a), brings the
-per-activity metrics up to date (M6b), rebuilds the daily load series from them (M6c) and
-brings the per-activity best efforts up to date (M6d). It never fails the sync: each part
+per-activity metrics up to date (M6b), rebuilds the daily load series from them (M6c),
+brings the per-activity best efforts up to date (M6d) and rebuilds the daily recovery trends
+from the wellness tables (M6e). It never fails the sync: each part
 runs in its own transaction, and an error in one becomes an `errors` count and a log line
 naming the exception class, never its message (which may quote data). Counts go to `sync_run.counts["analytics"]`.
 """
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from garminagent.analytics.activity_best_efforts import update_best_efforts
 from garminagent.analytics.activity_metrics import update_metrics
 from garminagent.analytics.daily_load import update_daily_load
+from garminagent.analytics.daily_recovery import update_daily_recovery
 from garminagent.analytics.sports import GROUPS, TYPE_KEY, is_mapped, sport_group
 from garminagent.analytics.thresholds import load_rows, rebuild_derived
 from garminagent.config import DEFAULT_ANALYTICS_MAX_ACTIVITIES, Settings
@@ -67,6 +69,7 @@ def analyze(
         "activity_metrics": _activity_metrics,
         "daily_load": _daily_load,
         "best_efforts": _best_efforts,
+        "daily_recovery": _daily_recovery,
     }
     for name, part in parts.items():
         try:
@@ -171,3 +174,17 @@ def _best_efforts(
     result.add("best_effort_counter_drops", counts.counter_drops)
     if counts.errors:
         result.add("errors", counts.errors)
+
+
+def _daily_recovery(
+    sessions: sessionmaker[Session], athlete_id: int, result: AnalyticsResult, options: AnalyticsOptions
+) -> None:
+    counts = update_daily_recovery(sessions, athlete_id)
+    result.add("daily_recovery_days", counts.days)
+    result.add("daily_recovery_inserted", counts.inserted)
+    result.add("daily_recovery_updated", counts.updated)
+    result.add("daily_recovery_deleted", counts.deleted)
+    result.add("daily_recovery_hrv_days", counts.hrv_days)
+    result.add("daily_recovery_rhr_days", counts.rhr_days)
+    result.add("daily_recovery_hrv_flagged_days", counts.hrv_flagged_days)
+    result.add("daily_recovery_rhr_flagged_days", counts.rhr_flagged_days)

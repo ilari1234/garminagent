@@ -166,6 +166,7 @@ def test_purge_removes_all_rows_and_blobs(app_sessions: sessionmaker[Session], b
         "activity_metrics": 0,
         "daily_load": 0,
         "activity_best_effort": 0,
+        "daily_recovery": 0,
     }
     # Every athlete table is counted, so a new one can't be purged silently (by cascade) uncounted.
     assert set(result.rows) == set(Base.metadata.tables) - {"athlete"}

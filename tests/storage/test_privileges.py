@@ -172,6 +172,30 @@ def test_activity_best_effort_refuses_free_text_and_mixed_values(
         session.execute(text(BEST_EFFORT_ROW), {"a": athlete_id, "kind": kind, "seconds": seconds, "power": power})
 
 
+NEW_IN_0010 = ("daily_recovery",)
+
+
+def test_app_role_can_write_the_m6e_table(app_sessions: sessionmaker[Session]) -> None:
+    with app_sessions.begin() as session:
+        athlete_id = ensure_athlete(session)
+        session.execute(
+            text(
+                "INSERT INTO daily_recovery (athlete_id, calendar_date, algo_version, hrv_days, hrv_baseline_days,"
+                " rhr_days, rhr_baseline_days) VALUES (:a, '2026-03-01', 1, 0, 0, 0, 0)"
+            ),
+            {"a": athlete_id},
+        )
+        session.execute(text("UPDATE daily_recovery SET rhr_days = 5"))
+        session.execute(text("DELETE FROM daily_recovery"))
+
+
+@pytest.mark.parametrize("table", NEW_IN_0010)
+def test_app_role_cannot_change_the_m6e_table(app_sessions: sessionmaker[Session], table: str) -> None:
+    for statement in (f"TRUNCATE {table}", f"ALTER TABLE {table} ADD COLUMN extra int", f"DROP TABLE {table}"):
+        with app_sessions() as session, pytest.raises(ProgrammingError, match=r"permission denied|must be owner"):
+            session.execute(text(statement))
+
+
 @pytest.mark.parametrize("view", VIEWS_IN_0008 + VIEWS_IN_0009)
 def test_rollup_views_run_with_the_readers_privileges(owner_engine: Engine, view: str) -> None:
     """Invariant 7: a rollup view never shows more than the reader may read in its tables."""
@@ -213,6 +237,7 @@ def test_daily_load_refuses_free_text_in_the_group_column(app_sessions: sessionm
         ("0006", NEW_IN_0007, False),
         ("0007", NEW_IN_0008, False),
         ("0008", NEW_IN_0009, False),
+        ("0009", NEW_IN_0010, False),
     ],
 )
 def test_new_tables_are_granted_explicitly_without_default_privileges(

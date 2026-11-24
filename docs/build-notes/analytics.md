@@ -305,3 +305,53 @@ and 94 above, less those cut by pauses).
 What later work must know: pauses are now the only thing cutting long efforts. If the curves
 look too thin, bridging short stops (for example up to 30 s, their time counted) would recover
 those runs, but it reverses the owner's first M6d decision and needs a new one.
+
+## M6e as built (2026-11-24)
+
+`daily_recovery` (migration 0010) holds one row per day, rebuilt by the `analyze` step's last
+part (`garminagent.analytics.daily_recovery`) from `hrv_summary.last_night_avg` and
+`daily_summary.resting_hr`. The definitions are the owner's (ADR 0013, *Owner's decisions on
+M6e*). Choices made where the ADR left room:
+
+- **Same rebuild as M6c.** The whole series is computed every run, compared with the stored rows
+  at a relative tolerance of 1e-12, and only differing rows are upserted; rows outside the new
+  series are deleted, in one transaction. Means and SDs use `math.fsum`, so the result doesn't
+  depend on the order rows come back in. The write helpers are copied from `daily_load`, not
+  shared, so neither milestone's code changes under the other.
+- **The series runs from the first to the last day with either input**, not to "today", so no
+  timezone setting decides where it ends, as in M6c. Days inside the range with no night stay
+  as rows with lower day counts.
+- **The band changed once during the build.** It was first built from the SD of the 7-day means
+  in the baseline (after the TrainingPeaks summary in ADR 0013); the review's M1 showed it flags
+  about two days in three when nothing changes, and the owner chose the SD of single days, as
+  first built. `algo_version` stayed 1, because no row was ever stored with the other rule.
+- **An HRV of 0 ms is dropped** before the log. Parsing range-checks it away already; the guard
+  keeps `log(0)` out if that ever changes.
+- **CHECK constraints** keep trend codes to `below`, `within`, `above` and make a trend exist
+  exactly when its recent mean, baseline mean and SD do, so a reader can never see a flag
+  without what it was computed from.
+- **The analyze part runs last**, after best efforts. It reads only wellness tables, so its place
+  in the order doesn't matter, and a failure in it can't hold up the activity metrics.
+- **Counts:** `daily_recovery_days`, `_inserted`, `_updated`, `_deleted`, `_hrv_days`,
+  `_rhr_days`, `_hrv_flagged_days`, `_rhr_flagged_days`. How the flags split (below, within,
+  above) is not in `analyze`'s counts, which reach `sync_run` and the logs; the real-data check
+  prints it in the owner's terminal, with a cross-count against Garmin's HRV status code.
+- **Hand-computed tests:** with value = day index, day 80's baseline is days 14..73, mean 43.5
+  and sample SD √305; alternating 48/52 bpm nights give a baseline of 50 with SD 2·√(60/59) and a
+  band of 50 ± 1.008; alternating 40/60 ms HRV gives a band of 44.2–54.3 ms; a spike on day 59 is
+  in the baseline from day 66 to day 125; with nights every day the first flag comes on day 36;
+  minimums of 4 and 30 at the edges; both measures' CHECK constraints are refused in the
+  database (Alembic's drift check doesn't compare them); the series is identical for any input
+  order.
+- **Expected flag share** (synthetic steady nights, 2026-11-24, in ADR 0013): 17–25 % of
+  flagged days are `below` or `above` with nothing changing, and a sustained 10 % HRV drop is
+  caught within 2 to 9 days. Read the real-data check's `recovery` split against that.
+
+What later work must know:
+
+- **The first 36 days of the series have no flags**, and gaps in wearing the watch push that
+  further. M6f's views can filter on the trend being non-NULL.
+- **About one flag in five is noise** on steady data. Agents should look for flags that last,
+  not single days.
+- **The flags are not training limits.** A phase 3 rule built on them needs a documented source,
+  and ±0.5 SD itself rests on a secondary source until OPEN_QUESTIONS 31 is closed.

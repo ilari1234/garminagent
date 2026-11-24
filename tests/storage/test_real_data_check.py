@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from garminagent.analytics import AnalyticsOptions, analyze
 from garminagent.analytics.thresholds import rebuild_derived, set_manual
 from garminagent.fit import Lap, ParsedFit, Sample
-from garminagent.normalize import parse_activities, parse_hr_zones, parse_weight
+from garminagent.normalize import DailySummaryRecord, HrvRecord, parse_activities, parse_hr_zones, parse_weight
 from garminagent.storage.repository import (
     SyncRange,
     ensure_athlete,
@@ -20,6 +20,8 @@ from garminagent.storage.repository import (
     save_raw_payload,
     set_cursor,
     upsert_activities,
+    upsert_daily_summaries,
+    upsert_hrv,
     upsert_weight,
 )
 from garminagent.sync import ACTIVITIES, HR_ZONES, HR_ZONES_REQUEST_KEY
@@ -367,4 +369,63 @@ def test_best_efforts_on_an_empty_database(app_sessions: sessionmaker[Session]) 
         "rows_per_group": {},
         "with_distance_samples_but_no_distance_effort": {"run": 0, "ride": 0},
         "implausible": {"run": 0, "ride": 0, "power_5s": 0},
+    }
+
+
+def test_report_recovery_coverage_and_flag_split(app_sessions: sessionmaker[Session]) -> None:
+    # 67 days: HRV 40/60 ms and resting HR 48/52 bpm alternating, then a week at 41 ms and 53 bpm.
+    first = TODAY - timedelta(days=66)
+    with app_sessions.begin() as session:
+        athlete = ensure_athlete(session)
+        upsert_hrv(
+            session,
+            athlete,
+            [
+                HrvRecord(
+                    calendar_date=first + timedelta(days=n),
+                    last_night_avg=41 if n >= 60 else 40 + 20 * (n % 2),
+                    status="BALANCED" if n < 66 else "LOW",
+                )
+                for n in range(67)
+            ],
+        )
+        upsert_daily_summaries(
+            session,
+            athlete,
+            [
+                DailySummaryRecord(
+                    calendar_date=first + timedelta(days=n), resting_hr=53 if n >= 60 else 48 + 4 * (n % 2)
+                )
+                for n in range(67)
+            ],
+        )
+    analyze(app_sessions, athlete)
+
+    with app_sessions() as session:
+        report = _load_script().collect(session, TODAY)["recovery"]
+
+    assert report["days"] == 67
+    assert (report["hrv_days_with_mean"], report["hrv_days_with_baseline"]) == (64, 31)
+    assert (report["rhr_days_with_mean"], report["rhr_days_with_baseline"]) == (64, 31)
+    assert sum(report["hrv_trend"].values()) == sum(report["rhr_trend"].values()) == 31
+    assert report["hrv_trend"]["below"] >= 1 and report["rhr_trend"]["above"] >= 1
+    assert report["hrv_trend_by_garmin_status"]["below"]["LOW"] == 1
+    output = json.dumps(report)
+    for forbidden in ("41", "53", str(first)):
+        assert forbidden not in output
+
+
+def test_recovery_on_an_empty_database(app_sessions: sessionmaker[Session]) -> None:
+    with app_sessions() as session:
+        report = _load_script().collect(session, TODAY)["recovery"]
+    empty = {"below": 0, "within": 0, "above": 0}
+    assert report == {
+        "days": 0,
+        "hrv_days_with_mean": 0,
+        "hrv_days_with_baseline": 0,
+        "rhr_days_with_mean": 0,
+        "rhr_days_with_baseline": 0,
+        "hrv_trend": empty,
+        "rhr_trend": empty,
+        "hrv_trend_by_garmin_status": {},
     }

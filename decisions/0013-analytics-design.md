@@ -2,12 +2,12 @@
 
 **Status:** Accepted (owner's decision, 2026-11-03). The phase 2 planning session produced this on
 2026-10-29 and revised it on 2026-11-03 after the orchestrator change (#8) and two real-data runs;
-the owner's answers are recorded below. M6a (2026-11-07), M6b (2026-11-09), M6c (2026-11-12)
-and M6d (2026-11-22) are built; what was built, choices made where this ADR left room, and the real-data findings are in
+the owner's answers are recorded below. M6a (2026-11-07), M6b (2026-11-09), M6c (2026-11-12),
+M6d (2026-11-22) and M6e (2026-11-24) are built; what was built, choices made where this ADR left room, and the real-data findings are in
 [docs/build-notes/analytics.md](../docs/build-notes/analytics.md) (ADR 0017). The owner's answers
 on M6b's threshold inputs are under *Owner's decisions on M6b's inputs*, and on M6c's series under
-*Owner's decisions on M6c*, and on M6d's best efforts under *Owner's decisions on M6d*. M6e–M6f
-are not built yet.
+*Owner's decisions on M6c*, on M6d's best efforts under *Owner's decisions on M6d*, and on M6e's
+recovery trends under *Owner's decisions on M6e*. M6f is not built yet.
 Formulas were checked against the sources below on 2026-10-29; two items remain unverified (see
 Consequences).
 
@@ -194,6 +194,62 @@ Points the *Best efforts* row left open, answered one at a time before M6d was b
   all time and for the last 365, 90 and 42 days (counted back from the day the view is read), and
   `best_effort_pb`, the all-time best with the best set before it. Both carry the activity ID so
   a person can look it up; M6f's agent views leave IDs out (docs/plan.md, data handling).
+
+## Owner's decisions on M6e (2026-11-23 and 2026-11-24)
+
+Points the *Recovery* row left open, answered one at a time before and during the M6e build.
+The definitions live in `garminagent.analytics.daily_recovery`; any change bumps its
+`algo_version`.
+
+- **HRV is `hrv_summary.last_night_avg`**, Garmin's average over the night (ms), taken as ln(ms).
+  Not the 5-minute high (one window, noisier), and not Garmin's weekly average (its own smoothing
+  on top of ours). Resting HR is `daily_summary.resting_hr`, as for HR load.
+- **Recent** is the mean over the 7 days ending on the day. **The baseline covers the 60 days
+  before that week** (days −66 to −7), so the week being judged never pulls its own baseline
+  along and a real drop shows in full. It costs a week more history before the first flag,
+  which doesn't matter with two years of history.
+- **Minimum days:** a recent mean needs at least 4 of its 7 days, and a baseline at least 30 of
+  its 60 days; below that the value is NULL and there is no flag. HRV and resting HR are judged
+  separately, and each row stores its day counts. The numbers are ours (no source gives one), a
+  little stricter than resting HR for HR load (3 of 7), because a trend should rest on most of
+  the week. With nights every day, the first flag comes on day 36.
+- **The band is the baseline mean ±0.5 SD, where the SD is taken over the single days** in the
+  baseline window (decided 2026-11-24). For one day the SD was taken over the 7-day means
+  instead, following the TrainingPeaks summary below; the M6e review
+  ([docs/reviews/m6e-review.md](../docs/reviews/m6e-review.md), M1) showed that this flags most
+  days when nothing changes, and the owner chose single days. Measured on synthetic steady nights
+  (HRV log-normal with SD 0.15, 2026-11-24): ±0.5 SD of single days flags 17–25 % of days and
+  catches a sustained 10 % HRV drop within 2 to 9 days; ±0.5 SD of 7-day means flags 68–70 %;
+  ±1.0 SD of 7-day means 38–41 %. A flag share near one in five on the real-data check therefore
+  means steady recovery, not a problem. With a very steady resting HR (a baseline SD under
+  1 bpm), a 1 bpm change, the smallest step whole-bpm values take, can flip a flag.
+- **Flags are `below`, `within` and `above`** (on the edge is `within`), per measure. Low HRV and
+  high resting HR are the directions that usually go with poor recovery, but the flags name only
+  the direction, and they are trends, not diagnoses. No combined flag: agents can read both, and
+  combining them would be a new rule without a source.
+- **Sleep, Body Battery, stress and weight stay out of M6e.** None has a trend rule in the
+  *Recovery* row, and adding one would be a new metric definition without a source. Body Battery
+  and stress were in docs/plan.md's first M6e outline; the owner confirmed leaving them out on
+  2026-11-24 (M6e review, L1). Phase 3 design (OPEN_QUESTIONS 10–18) decides whether an agent
+  needs any of them. Garmin's own HRV status stays readable in `hrv_summary`.
+
+Source check (2026-11-23):
+
+- TrainingPeaks' summary of a Plews-led study of cyclists
+  ([New study widens HRV evidence](https://www.trainingpeaks.com/blog/new-study-widens-hrv-evidence-for-more-athletes/))
+  is the only source found that states the factor: "calculate the standard deviation of the HRV
+  7-day average and take 0.5 SD as the smallest worthwhile change". Its baseline was 4 weeks,
+  and the rule decided each day's training intensity, where frequent signals are acceptable;
+  M6e's flags are trend signals, which is why the owner chose the single-day SD. It is a
+  secondary write-up, so OPEN_QUESTIONS 31 stays open.
+- HRV4Training builds its normal range from "the past 60 days of your measurements"
+  ([Altini, 2023](https://marcoaltini.substack.com/p/whats-your-normal-range-for-heart)) and
+  publishes no width.
+- The AIS guide recommends 7-day rolling averages judged against the smallest worthwhile change;
+  its PDF link now redirects to a 404, so its formula is still unread.
+- Schneider et al. 2019 ([Frontiers in Physiology](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00582/full))
+  uses 0.2 × the between-subject SD over a 4-day baseline: a group rule that doesn't fit one
+  athlete.
 
 ## Alternatives considered
 

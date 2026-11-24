@@ -10,7 +10,7 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 | Raw | `raw_payload`, `activity_file`, blobs | `normalize`, `fit` and `renormalize` only, plus `purge-data` | Sync |
 | Operational | `athlete`, `sync_cursor`, `sync_run` | Sync, `status` | Sync, runner |
 | Normalized | `activity`, `daily_summary`, `activity_sample`, `activity_lap`, `sleep_summary`, `hrv_summary`, `weight_daily`, `athlete_zones` | Analytics | Sync, FIT parser, `renormalize` |
-| Derived | `athlete_threshold` (M6a), `activity_metrics` (M6b), `daily_load` and the view `daily_load_weekly` (M6c), `activity_best_effort` and the views `best_effort_curve` and `best_effort_pb` (M6d); more follow in M6e (ADR 0013) | Analytics; agent layer through views (M6f) | Analytics; `manual` thresholds by `garminagent thresholds` |
+| Derived | `athlete_threshold` (M6a), `activity_metrics` (M6b), `daily_load` and the view `daily_load_weekly` (M6c), `activity_best_effort` and the views `best_effort_curve` and `best_effort_pb` (M6d), `daily_recovery` (M6e) | Analytics; agent layer through views (M6f) | Analytics; `manual` thresholds by `garminagent thresholds` |
 
 **Agents read none of these directly** ([agent layer](agent-layer.md)).
 
@@ -67,6 +67,7 @@ columns and types; this file says what they mean and who may rely on what. Reaso
 | `activity_best_effort` | `(athlete_id, activity_id, kind, span)`, FK to `activity`, cascade; index `(athlete_id, sport_group, kind, span)` | Best efforts per activity (M6d): `kind` `distance` (runs: 400 m to marathon; rides: 10–100 km) with `span` in whole metres and `seconds` the shortest time, or `power` (every group; 5 s to 5 h) with `span` in seconds and `power_w` the highest mean. Every span the group is looked for has a row; NULL value: not reached. `activity_date`, `sport_group`, `algo_version`, `input_fingerprint`. Written by `analyze` only |
 | `best_effort_curve` (view) | — | Per group, kind and span, the best value with its `activity_id` and `activity_date`, for all time (`period_days` NULL) and the last 365, 90 and 42 days. Ties to the earlier date |
 | `best_effort_pb` (view) | — | Per group, kind and span, the all-time best with its activity and date, and the best set on an earlier day (`previous_seconds`, `previous_power_w`, `previous_activity_id`, `previous_activity_date`; NULL for a first effort) |
+| `daily_recovery` | `(athlete_id, calendar_date)` | One row per day (M6e), from the first to the last day with an HRV or resting HR value. Per measure: days present in the recent 7-day window (`hrv_days`, `rhr_days`), the recent mean (HRV as mean of ln ms, resting HR in bpm; NULL under 4 days), the baseline's day count (days with a value in the 60 days before that week), mean and SD over those days (NULL under 30), and `hrv_trend` / `rhr_trend` (`below`, `within`, `above` against mean ±0.5 SD; NULL unless both mean and baseline exist, enforced by CHECK). `algo_version`. Trends, not diagnoses. Written by `analyze` only |
 | `weight_daily` | `(athlete_id, calendar_date)` | Latest weigh-in in kg (Garmin sends grams despite the spec; converted, confirmed on real data 2026-11-03), BMI, body fat, entries. Sensitive: opt-in before reaching a model |
 
 ## Semantics consumers get wrong

@@ -40,6 +40,7 @@ from garminagent.storage.models import (
     AthleteZones,
     Base,
     DailyLoad,
+    DailyRecovery,
     DailySummary,
     HrvSummary,
     RawPayload,
@@ -431,6 +432,7 @@ def purge_athlete(sessions: sessionmaker[Session], blobs: BlobStore, athlete_id:
         ActivityMetrics,
         DailyLoad,
         ActivityBestEffort,
+        DailyRecovery,
     ]
     with sessions.begin() as session:
         rows = {
