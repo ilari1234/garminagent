@@ -345,13 +345,17 @@ M6e*). Choices made where the ADR left room:
   order.
 - **Expected flag share** (synthetic steady nights, 2026-11-24, in ADR 0013): 17–25 % of
   flagged days are `below` or `above` with nothing changing, and a sustained 10 % HRV drop is
-  caught within 2 to 9 days. Read the real-data check's `recovery` split against that.
+  caught within 2 to 9 days. That is a floor for pure noise: real nightly series drift and
+  resemble the night before, so they flag more often, and the share alone is no verdict.
+- **Real-data check (2026-11-24):** the owner ran `analyze` and the real-data check after the
+  merge; the series and flags behaved as defined. Its counts are wellness data and stay out of
+  this public repository (owner's decision).
 
 What later work must know:
 
 - **The first 36 days of the series have no flags**, and gaps in wearing the watch push that
   further. M6f's views can filter on the trend being non-NULL.
-- **About one flag in five is noise** on steady data. Agents should look for flags that last,
-  not single days.
+- **Flags are frequent.** About one in five is noise even on steady synthetic data, and real
+  series flag more often. Agents should look for flags that last, not single days.
 - **The flags are not training limits.** A phase 3 rule built on them needs a documented source,
   and ±0.5 SD itself rests on a secondary source until OPEN_QUESTIONS 31 is closed.
