@@ -220,8 +220,11 @@ The definitions live in `garminagent.analytics.daily_recovery`; any change bumps
   days when nothing changes, and the owner chose single days. Measured on synthetic steady nights
   (HRV log-normal with SD 0.15, 2026-11-24): ±0.5 SD of single days flags 17–25 % of days and
   catches a sustained 10 % HRV drop within 2 to 9 days; ±0.5 SD of 7-day means flags 68–70 %;
-  ±1.0 SD of 7-day means 38–41 %. A flag share near one in five on the real-data check therefore
-  means steady recovery, not a problem. With a very steady resting HR (a baseline SD under
+  ±1.0 SD of 7-day means 38–41 %. These shares are for independent nights around a fixed level,
+  so they are a floor: real nightly series drift with training, season and illness, and one
+  night resembles the next, so their 7-day means stray further from the baseline and a higher
+  share is expected. The share alone says nothing about whether recovery is good or bad
+  (corrected 2026-11-24, after the owner's real-data check). With a very steady resting HR (a baseline SD under
   1 bpm), a 1 bpm change, the smallest step whole-bpm values take, can flip a flag.
 - **Flags are `below`, `within` and `above`** (on the edge is `within`), per measure. Low HRV and
   high resting HR are the directions that usually go with poor recovery, but the flags name only

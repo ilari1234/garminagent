@@ -178,8 +178,9 @@ Recovery trends are rebuilt in full every run from `hrv_summary` and `daily_summ
 changed rows are written. `daily_recovery_hrv_days` and `_rhr_days` count days with a recent
 7-day mean (4 nights or more), and `_hrv_flagged_days` and `_rhr_flagged_days` days that also
 have a baseline (30 or more nights in the 60 days before), so they carry a flag. With nights
-every day the first flag comes 36 days after the first night. About one flagged day in five
-being `below` or `above` is what steady recovery looks like (ADR 0013, *Owner's decisions on
+every day the first flag comes 36 days after the first night. Pure noise alone makes about one
+flagged day in five `below` or `above`; real series drift and flag more often, so the share
+alone is no verdict on recovery (ADR 0013, *Owner's decisions on
 M6e*).
 
 HR load needs `ANALYTICS_TRIMP_B` in `.env`: `1.92` or `1.67`, Banister's published coefficients

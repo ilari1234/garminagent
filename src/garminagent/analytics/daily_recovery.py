@@ -27,7 +27,8 @@ values NULL) from a day outside the data.
 - HRV and resting HR are judged separately: a missing HRV night never hides the resting HR flag.
 - Flag: `below` under baseline mean - 0.5 SD, `above` over mean + 0.5 SD, else `within`
   (a value on the boundary is `within`). The SD is of single days, not of 7-day means (owner's
-  decision, 2026-11-24): on steady synthetic nights this flags about one day in five and still
+  decision, 2026-11-24): on steady synthetic nights (a floor; real series drift and flag more
+  often) this flags about one day in five and still
   catches a sustained 10 % HRV drop within 2 to 9 days, while ±0.5 SD of 7-day means flagged
   about two days in three with nothing changing. The 0.5 factor is not yet verified against a
   primary source (OPEN_QUESTIONS 31). Low HRV and high resting HR are the directions that
